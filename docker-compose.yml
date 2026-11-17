@@ -1,0 +1,71 @@
+# 本地开发环境。
+#
+# 两个库：
+#   pgvector  —— 应用库（元数据、语义层、评测结果）+ 向量列
+#   bankdb    —— 目标业务库（"假银行" fixture），被问数的那个库
+#
+# Oracle 走独立 profile，因为镜像约 1.5GB，日常开发不必启动：
+#   docker compose up -d pgvector bankdb
+#   docker compose --profile oracle up -d          # 需要验证 Oracle 方言时
+
+services:
+  pgvector:
+    image: pgvector/pgvector:pg17
+    container_name: wenshu-pgvector
+    environment:
+      POSTGRES_USER: wenshu
+      POSTGRES_PASSWORD: wenshu
+      POSTGRES_DB: wenshu
+    ports:
+      - "5433:5432"          # 宿主 5433，避免与本机已有 Postgres 冲突
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wenshu -d wenshu"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  bankdb:
+    image: postgres:17
+    container_name: wenshu-bankdb
+    environment:
+      POSTGRES_USER: bankfixture
+      POSTGRES_PASSWORD: bankfixture
+      POSTGRES_DB: bankfixture
+    ports:
+      - "5434:5432"
+    volumes:
+      - bankdb_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankfixture -d bankfixture"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ---------------------------------------------------------------------------
+  # 可选：Oracle 目标库。生产方言是 Oracle，fixture 里的多数 DDL 差异
+  # （DATE 字面量、DUAL、TO_CHAR、NULL 排序）只有在这里才能测到。
+  # ---------------------------------------------------------------------------
+  bankdb-oracle:
+    profiles: ["oracle"]
+    image: gvenzl/oracle-free:23-slim
+    container_name: wenshu-bankdb-oracle
+    environment:
+      ORACLE_PASSWORD: oracle
+      APP_USER: bankfixture
+      APP_USER_PASSWORD: bankfixture
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+
+volumes:
+  pgvector_data:
+  bankdb_data:
+  oracle_data:

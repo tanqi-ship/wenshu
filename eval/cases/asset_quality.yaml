@@ -1,0 +1,248 @@
+# 评测集：资产质量域
+#
+# 每条用例必须写 `why_hard` 和 `covers`。这两个字段是整个评测集的价值所在：
+#
+#   why_hard  说明"这条为什么容易错"。写不出来，说明这条用例测不出东西。
+#   covers    引用 fixture 的缺陷编号（D-xx）和业务规则编号（C-xx）。
+#             CI 挂了能直接定位"哪一类规则退化了"。
+#
+# expected.result 里的数字是从 fixtures/sql/bank_fixture.sql 的实际数据算出来的，
+# 不是估的。改 fixture 数据必须同步改这里 —— 这是有意的不方便。
+
+- id: AQ-001
+  question: "2026年4月末全行贷款余额是多少？"
+  difficulty: easy
+  standard_sql: |
+    SELECT SUM(current_balnc_cny) AS loan_balance
+    FROM qa_loan_acc_detail
+    WHERE etl_dt = DATE '2026-04-30'
+  expected:
+    tables: [qa_loan_acc_detail]
+    answer_path: etl_calculated
+    result: 20210000.00
+  why_hard: |
+    看似最简单的一条，但有两个坑：
+    ① "全行"是默认口径，不该触发澄清（槽位 org 用 use_default）；
+    ② etl_dt 是月末快照，必须精确取 2026-04-30，不能取 MAX(etl_dt)
+       也不能用 <= 或 BETWEEN（否则会跨期累加）。
+  covers: [D-10, C-05]
+
+- id: AQ-002
+  question: "2026年4月末渝北支行不良贷款余额是多少？"
+  difficulty: medium
+  standard_sql: |
+    SELECT SUM(CASE WHEN fiv_lev_cla_flag IN ('30','40','50')
+                    THEN current_balnc_cny ELSE 0 END) AS npl_balance
+    FROM qa_loan_acc_detail
+    WHERE etl_dt = DATE '2026-04-30' AND org_no = 'B001'
+  expected:
+    tables: [qa_loan_acc_detail]
+    answer_path: etl_calculated
+    result: 2850000.00
+  why_hard: |
+    三个独立的坑叠加：
+    ① "支行"属于财务机构，必须过滤 org_no 而不是 accounting_org_no。
+       fixture 里 LN0006 的 accounting_org_no='O003'，选错字段数字就不对。
+    ② "不良"= 五级分类 30/40/50，不是"逾期天数 > 0"。
+       LN0005 的 overdue_day 是 NULL，如果按逾期判断会漏掉或多算。
+    ③ 渝北支行只有 org_no='B001' 的 3 笔（LN0001/LN0002/LN0005），
+       不含下辖网点 O001/O002 的独立记账。
+  covers: [D-01, D-09, C-09]
+
+- id: AQ-003
+  question: "2026年4月末全行不良率是多少？"
+  difficulty: medium
+  standard_sql: |
+    SELECT SUM(CASE WHEN fiv_lev_cla_flag IN ('30','40','50')
+                    THEN current_balnc_cny ELSE 0 END)
+           / NULLIF(SUM(current_balnc_cny), 0) AS npl_rate
+    FROM qa_loan_acc_detail
+    WHERE etl_dt = DATE '2026-04-30'
+  expected:
+    tables: [qa_loan_acc_detail]
+    answer_path: etl_calculated
+    result: 0.269668
+    unit: "%"
+  why_hard: |
+    ① 百分数必须返回 0~1 小数，禁止 * 100（规则 C-07 / R-PCT-001）。
+       乘了 100 会得到 26.9668，看起来"更像百分数"，很难被人发现。
+    ② 分母必须 NULLIF 保护，否则全行无余额时抛除零错误。
+    ③ 分子分母必须是同一时点同一口径，不能分子取 4 月、分母取 3 月。
+  covers: [C-07]
+
+- id: AQ-004
+  question: "2026年1月末到2026年4月末，全行贷款余额增加额是多少？"
+  difficulty: hard
+  standard_sql: |
+    SELECT SUM(CASE WHEN etl_dt = DATE '2026-04-30'
+                    THEN current_balnc_cny ELSE 0 END) AS cur_balance,
+           SUM(CASE WHEN etl_dt = DATE '2026-01-31'
+                    THEN current_balnc_cny ELSE 0 END) AS base_balance,
+           SUM(CASE WHEN etl_dt = DATE '2026-04-30'
+                    THEN current_balnc_cny ELSE 0 END)
+         - SUM(CASE WHEN etl_dt = DATE '2026-01-31'
+                    THEN current_balnc_cny ELSE 0 END) AS delta
+    FROM qa_loan_acc_detail
+    WHERE etl_dt IN (DATE '2026-04-30', DATE '2026-01-31')
+  expected:
+    tables: [qa_loan_acc_detail]
+    answer_path: etl_calculated
+    result: 1010000.00
+  why_hard: |
+    ① 双时点必须一条 SELECT 一次筛出（规则 C-05 / R-COMP-001）。
+       用标量子查询去查另一个 etl_dt 是最常见的错误写法。
+    ② "增加额"是派生结果，不是物理字段，不能去指标表里找"增加额"这个指标。
+    ③ 排序和展示需要当前值、基准值、差值三列，不能只返回差值。
+  covers: [C-05]
+
+- id: AQ-005
+  question: "2026年4月末各信贷产品的贷款余额分别是多少？"
+  difficulty: medium
+  standard_sql: |
+    SELECT credit_loan_prodct_no                    AS prd_no,
+           MAX(credit_loan_prodct_nm)               AS prd_nm,
+           SUM(current_balnc_cny)                   AS loan_balance
+    FROM qa_loan_acc_detail
+    WHERE etl_dt = DATE '2026-04-30'
+    GROUP BY credit_loan_prodct_no
+    ORDER BY loan_balance DESC
+  expected:
+    tables: [qa_loan_acc_detail]
+    answer_path: etl_calculated
+    result:
+      LP01: 9810000.00
+      LP03: 4350000.00
+      LP05: 4950000.00
+      LP07: 1100000.00
+  why_hard: |
+    ① 必须按编码 credit_loan_prodct_no 分组，不能按名称
+       credit_loan_prodct_nm 分组（规则 C-11 / R-NAME-001）。
+    ② 需要展示名称时用 MAX(名称)，不是在 GROUP BY 里加名称。
+    ③ 用户说"各产品"是维度词，必须保留在输出里，不能被当成筛选条件消掉。
+  covers: [D-07, C-11]
+
+- id: AQ-006
+  question: "2026年4月各产品的不良率是多少？"
+  difficulty: hard
+  standard_sql: |
+    SELECT prd_no, MAX(prd_nm) AS prd_nm, npl_rate
+    FROM rpt_npl_by_product_202604
+    WHERE stat_month = '202604'
+    GROUP BY prd_no, npl_rate
+    ORDER BY prd_no
+  expected:
+    tables: [rpt_npl_by_product_202604]
+    answer_path: report_hit
+    result:
+      LP01: 0.000000
+      LP03: 0.140700
+      LP05: 0.000000
+      LP07: 0.300000
+    must_not_use: [rpt_npl_by_overdue_202604]
+  why_hard: |
+    这是整个评测集里最重要的一条。
+    ① fixture 里有两张报表都叫 npl_rate：一张按五级分类（标准口径），
+       一张按逾期 90 天以上（另一口径）。LP03 前者 0.1407、后者 0.1283。
+       命中错的那张，SQL 完全合法、数字看着也合理，但口径是错的。
+       这是最危险的一类错误 —— 无法靠看 SQL 发现。
+    ② 报表分支禁止 JOIN（规则 C-06 / R-JOIN-001），只能查单张报表。
+    ③ must_not_use 是本用例的核心断言：结果对还不够，来源也必须对。
+  covers: [D-04, D-11, C-06]
+
+- id: AQ-007
+  question: "2026年4月核销的本金和已清收金额分别是多少？"
+  difficulty: medium
+  standard_sql: |
+    SELECT SUM(w.writeoff_principal) AS writeoff_principal,
+           SUM(w.recovered_amount)   AS recovered_amount
+    FROM qa_writeoff_detail w
+    WHERE w.writeoff_date >= DATE '2026-04-01'
+      AND w.writeoff_date <  DATE '2026-05-01'
+  expected:
+    tables: [qa_writeoff_detail]
+    answer_path: etl_calculated
+    result:
+      writeoff_principal: 700000.00
+      recovered_amount: 150000.00
+  why_hard: |
+    ① 核销表的时间字段是 writeoff_date（业务日期），不是 etl_dt（快照）——
+       同一张库里两种时间语义并存，选错就会得到 0 行。
+    ② "核销本金"用 writeoff_principal，"核销余额"用 writeoff_balance，
+       两个口径不同（规则 C-03 的同类问题）。
+    ③ 单表就够，不需要 JOIN 到明细表 —— 多 JOIN 会因借据号重复而放大金额。
+  covers: [D-02, C-03, C-04]
+
+- id: AQ-008
+  question: "2026年每个月，贷款余额最高的支行是哪个、余额多少？"
+  difficulty: hard
+  standard_sql: |
+    WITH monthly AS (
+        SELECT etl_dt,
+               org_no,
+               SUM(current_balnc_cny) AS loan_balance
+        FROM qa_loan_acc_detail
+        WHERE etl_dt >= DATE '2026-01-01' AND etl_dt < DATE '2026-05-01'
+        GROUP BY etl_dt, org_no
+    ), ranked AS (
+        SELECT etl_dt, org_no, loan_balance,
+               ROW_NUMBER() OVER (PARTITION BY etl_dt
+                                  ORDER BY loan_balance DESC, org_no) AS rn
+        FROM monthly
+    )
+    SELECT etl_dt, org_no, loan_balance
+    FROM ranked
+    WHERE rn = 1
+    ORDER BY etl_dt
+  expected:
+    tables: [qa_loan_acc_detail]
+    answer_path: etl_calculated
+    result:
+      - {etl_dt: "2026-01-31", org_no: "B001", loan_balance: 13000000.00}
+      - {etl_dt: "2026-02-28", org_no: "B001", loan_balance: 12880000.00}
+      - {etl_dt: "2026-04-30", org_no: "B001", loan_balance: 12660000.00}
+  why_hard: |
+    ① "每月 Top N" 必须用窗口函数（规则 C-12 / R-TOPN-001）。
+       只写 ORDER BY ... LIMIT 1 得到的是"全局最高"，不是"每月最高"——
+       而且行数看起来也对（都是 1 行），极难发现。
+    ② 只应该返回 3 行，因为 fixture 里 2026-03 的快照缺失（D-10）。
+       如果返回 4 行，说明按日历补了月份，那是错的。
+    ③ 同余额时要有稳定的次级排序（org_no），否则结果不可复现。
+  covers: [D-10, C-12]
+
+- id: AQ-009
+  question: "2026年3月末全行贷款余额是多少？"
+  difficulty: hard
+  standard_sql: null
+  expected:
+    behavior: clarify_or_disclose
+    reason: "fixture 中 2026-03-31 的快照缺失（模拟 ETL 失败）"
+    must_not:
+      - "返回 0"
+      - "静默返回 2026-02-28 或 2026-04-30 的数据"
+      - "生成 SQL 后报数据库空结果错误"
+  why_hard: |
+    这是"数据缺失"而不是"问题不清晰"，但两者都会被当成"没结果"。
+    正确行为有两种，都可以接受：
+      a) 澄清："2026年3月末的快照当前缺失，是否改用 2 月末或 4 月末？"
+      b) 作答但明确标注："查无 2026-03-31 快照；最近可用为 2026-02-28"
+    错误行为是静默给一个数字 —— 那是最坏的情况，因为用户无法分辨。
+  covers: [D-10]
+
+- id: AQ-010
+  question: "2026年4月营销活动的广告投放回报率是多少？"
+  difficulty: hard
+  standard_sql: null
+  expected:
+    behavior: refuse_with_alternative
+    reason: "库里没有任何广告投放相关表或字段"
+    must_include:
+      - "说明当前数据不含广告投放"
+      - "给出可替代的答案（例如 4 月贷款余额增量或核销金额）"
+    must_not:
+      - "编造一个广告投放表名"
+      - "用其他指标冒充返回一个数字"
+  why_hard: |
+    覆盖率不足时必须"带替代方案拒答"，而不是硬失败也不是编造。
+    这是把"不可答"做成一等公民的价值：用户知道自己问的东西系统不懂，
+    并且立刻得到下一步该问什么的建议。
+  covers: []

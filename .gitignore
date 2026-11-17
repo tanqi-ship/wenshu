@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+_deps/
+build/
+dist/
+
+# 测试与工具缓存
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# 环境与密钥
+.env
+.env.local
+*.key
+*.pem
+
+# 数据库卷（docker compose）
+pgdata/
+oracledata/
+
+# 本地运行时产物
+*.log
+logs/
+outputs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# ⚠️ 例外：eval/baseline_report.json 必须提交
+# 它是回归门禁的基准。若不进版本库，CI 的 regression job 会一直跳过。
+# 见 ci.yml 里的 `if: hashFiles('eval/baseline_report.json') != ''`
+!eval/baseline_report.json
+
+# ⚠️ 例外：tests/cassettes/*.json 必须提交
+# CI 靠它回放，不进版本库等于 CI 跑不了。
+!tests/cassettes/*.json
