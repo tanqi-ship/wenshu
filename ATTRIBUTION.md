@@ -1,45 +1,66 @@
-# 代码来源与许可
+# 代码来源说明
 
-## askdb
+> **当前状态（第一步，已核实）：本仓库 51 个文件，零行代码复制自其他项目。**
+>
+> 全部由本项目作者重新编写。`pyproject.toml` 里的 16 个依赖包名转录自
+> askdb 的 `requirements.txt`（这是依赖清单，不是代码），其余为原创。
+>
+> 一条可复核的验证方式：本仓库不含任何 `SPDX-FileCopyrightText: ... NVIDIA`
+> 版权头，也不含 askdb 的任何源文件。
 
-本项目初始骨架中的周边代码来自 **askdb** 项目（内部项目，未开源）。
+---
 
-* 所有者：项目作者本人
-* 使用许可：经作者本人明确同意，用于本项目，**不用于商业用途**
-* 保留的部分：数据模型、连接器、权限、前端、周边服务（清单见 `MIGRATION.md`）
-* 重写的部分：编排引擎、SQL 生成、检索、分诊、澄清
+## 一、为什么现在没有可抄的代码
 
-askdb 本身**没有 LICENSE 文件**。这意味着默认状态下保留所有权利。
-本项目对它的使用依赖于作者的口头/书面授权，而不是开源许可。
+设计上的选择：**先建干净骨架，再按需搬入**，而不是 fork 一个 9 万行的仓库。
 
-> ⚠️ 后续注意：如果本项目将来要商用、要开源、或要交给其他主体，
-> 必须先解决 askdb 代码的授权问题。**当前状态只适用于作者授权的非商业用途。**
+理由见 `MIGRATION.md` 第一节。核心是：需要改的正是架构本身，
+先 fork 会让人不断纠结"这段还要不要"，而删代码比搬代码难得多。
 
-## 参考设计（未复制代码）
+## 二、Step 0 搬入时，必须回来更新这一节
 
-以下项目只借鉴了设计思想，没有复制代码：
+如果后续真的复制了 askdb 的代码（`MIGRATION.md` 里"✅ 抄"那一批），
+**那时**才产生实际的归属义务。届时请在本节登记：
+
+| 源文件 | 目标路径 | 复制日期 | 授权依据 |
+|---|---|---|---|
+| （示例）`services/connector_manager.py` | `app/legacy/services/` | 2026-11-xx | 作者本人授权，非商业用途 |
+
+同时注意：askdb **没有 LICENSE 文件**，默认"保留所有权利"。
+本项目对它的使用依赖作者本人的明确授权，而不是开源许可。
+一旦本项目要商用、开源、或移交其他主体，**必须先解决这个授权问题**。
+
+## 三、设计参考（未复制代码，无法律义务，但有工程价值）
+
+以下项目只借鉴了设计思想与实测结论。记录在这里的目的不是归属声明，
+而是**防止后来人把已经验证过的结论重新推翻**。
 
 ### NVIDIA Auto Ontology（Apache-2.0）
 
-借鉴了四处设计：
+| 参考了什么 | 位置 | 影响到了本项目哪里 |
+|---|---|---|
+| **核心信条**："写在 prompt 里的 SQL 规则块，每次实测都让准确率下降" | `retrieval/text_to_sql/react/prompts.py` 开头的 docstring | 整个 `app/engine/validation/rules.py` 的存在理由 |
+| `tables_not_shown`：用 sqlglot AST 强制"模型只能使用检索到的表"，而不是靠 prompt 约束 | `retrieval/text_to_sql/react/run_sql.py` | `app/engine/validation/names.py` 的 `TABLE_NOT_IN_SCOPE` |
+| 覆盖率 = 命中实体数 / 问题实体数，把"可答性"做成一等公民 | `retrieval/entity_coverage/` | 尚未实现（Step 2 计划） |
+| CI 结构：分圈 lint、pgvector service、**skip guard**（测试静默跳过 = 失败） | `.github/workflows/ci-python.yml` | `.github/workflows/ci.yml` |
+| fixture 哲学："*Deliberately small: 重点是有真实外键的第二个 schema，不是更多数据*" | `dev_tools/fixtures/sql/pagila_analytics.sql` | `fixtures/sql/bank_fixture.sql` 的 D-01~D-11 设计 |
 
-| 位置 | 借鉴了什么 |
+**说明**：思想借鉴不产生许可义务。如果后续直接复制其中代码，
+请在那些文件头部保留 SPDX 声明（Apache-2.0 要求保留版权与许可声明）。
+
+### askdb（内部项目）
+
+| 参考了什么 | 影响到了本项目哪里 |
 |---|---|
-| `retrieval/text_to_sql/react/run_sql.py` | `tables_not_shown` 的思路：用 sqlglot AST 强制"模型只能使用检索到的表"，而不是靠 prompt 约束 |
-| `retrieval/text_to_sql/react/prompts.py` | 核心信条：*"rule blocks in the writer prompt lost accuracy every time they were measured"* —— 写在 prompt 里的 SQL 规则块，每次实测都让准确率下降 |
-| `retrieval/entity_coverage/` | 覆盖率 = 命中实体数 / 问题实体数，作为"可答性"的一等公民 |
-| `.github/workflows/ci-python.yml` | CI 结构：分圈 lint、pgvector service、**skip guard**（测试静默跳过 = 失败） |
-| `dev_tools/fixtures/sql/pagila_analytics.sql` | fixture 设计哲学："*Deliberately small: the point is a second schema that has real foreign keys back into public, not more data*" |
+| 语义层的数据形态：`db_column_meta` 的 label / synonyms / unit / code_mapping / column_role / semantic_dimension_code | `app/engine/semantic/models.py` 的 `ColumnDef` |
+| 指标来源表映射（指标 → 物理表）的思路 | `MetricDef.source_tables` |
+| 三层权限纵深：表过滤 → 行级 WHERE 注入 → 列白名单 | 尚未搬入（Step 0 计划） |
+| 业务规则清单（机构口径、时点对比、百分比、名称字段、报表禁 JOIN） | `app/engine/validation/rules.py` 的 6 条规则 |
+| 回归 fixture 的字段命名与业务语义（`fiv_lev_cla_flag`、`current_balnc_cny` 等） | `fixtures/sql/bank_fixture.sql` |
 
-这些是思想借鉴，实现是重写的。若后续直接复制其中代码，请在该文件头部
-保留 SPDX 声明（Apache-2.0 要求保留版权与许可声明）。
+注意：**业务规则本身是业务知识，不是代码**，不产生代码归属问题。
 
-### 业务规则
+## 四、本项目自身
 
-`eval/cases/*.yaml` 中引用的 `C-xx` 编号对应《信贷问数业务规则汇编》
-（内部文档，作者：项目组）。规则本身是业务知识，不是代码。
-
-## 本项目
-
-版权归项目作者所有。许可证待定 —— 在 askdb 授权问题解决前，
-不建议声明为开源许可。
+版权归项目作者。**许可证待定** —— 在 askdb 授权问题明确之前，
+不建议声明为任何开源许可。
