@@ -1,0 +1,58 @@
+# 黄金集：手写标准 SQL + 对应的 Intent
+#
+# 这个文件回答一个问题：**给我一个 Intent，引擎该产出哪条 SQL？**
+# 答案在旁边的 <id>.sql 里，是**手写**的，不是引擎产出的。
+#
+# 每条用例四要素：
+#
+#   id         G-xxx。刻意与评测集（eval/cases 的 AQ-xxx）分开编号 ——
+#              两者曾经撞号：同一个 AQ-001 在这里是不良贷款余额、
+#              在评测集里是贷款余额。撞号会让门禁和评测报告互相污染。
+#   shape      形状标签。M2 每加一种形状，这里多一个值；一眼能看出覆盖了哪些形状。
+#   intent     编译器的输入。**只能用接口语言写**（指标名/时间/维度/过滤），
+#              不许出现 SQL 片段 —— 否则黄金集就变成"人教编译器写 SQL"了。
+#   golden     黄金 SQL 文件名（相对本目录）。
+#
+# 可选：
+#   eval_case  对应的评测用例编号。用于交叉检查"哪些评测用例还没有黄金对照"。
+#              **没有对应项就留空**，不要硬凑 —— 硬凑的对照会掩盖差异。
+#   covers     覆盖的业务规则编号（C-xx / R-xxx / D-xx）。
+#
+# 纪律：每加一种 SQL 形状，必须同时交三样 = 黄金 SQL + 单测 + covers 标注。
+#
+# 时间写法说明：points 必须写**具体日期**，不写"4月末"这种说法。
+# "4月末 → 2026-04-30"的推算在 compiler/time.py::month_end_range，
+# 属于编译器侧；加载器不猜日期（app/engine/semantic/models.py::intent_from_mapping）。
+
+- id: G-001
+  shape: month_end_single_point
+  intent:
+    metric: 不良贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+  golden: G-001.sql
+  covers: [R-NAME-001]
+  why_hard: |
+    看似最简单的一条，但有两个坑：
+    ① etl_dt 是月末快照，必须**精确等值** 2026-04-30，
+       不能用 MAX(etl_dt) 也不能用 <= / BETWEEN（否则跨期累加）；
+    ② "不良"= 五级分类 30/40/50 的余额之和，不是"逾期天数 > 0"。
+       fixture 里 LN0005 的 overdue_day 是 NULL，按逾期判断会漏算。
+    第 ② 点**任何校验规则都抓不到**，只能靠这条黄金 SQL 钉住。
+
+- id: G-002
+  shape: month_end_single_point
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+  golden: G-002.sql
+  eval_case: AQ-001
+  covers: [R-NAME-001]
+  why_hard: |
+    这个指标的公式在语义层里**不带** {tbl} 占位符（SUM(current_balnc_cny)），
+    靠 compiler/metrics.py::qualify_columns 补表别名。
+    所以它钉住的是"补别名"这件事：少一个 t1. 前缀也算不一致。
+    同时它是唯一有评测用例对照的一条（AQ-001），用来验证交叉检查真的在工作。

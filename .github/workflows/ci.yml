@@ -1,9 +1,9 @@
 # CI 流水线。
 #
 # 设计原则（借鉴 auto-ontology 的 ci-python.yml，Apache-2.0）：
-#   1. 分圈：新引擎代码严格，从 askdb 搬来的代码先用 continue-on-error 观察
-#   2. CI 绝不调用真实 LLM / embedding（不可复现、要联网、会超时、花钱）
-#   3. 测试静默跳过 = 失败。一个绿的但少跑了一半用例的流水线毫无价值
+#   1. CI 绝不调用真实 LLM / embedding（不可复现、要联网、会超时、花钱）
+#   2. 测试静默跳过 = 失败。一个绿的但少跑了一半用例的流水线毫无价值
+#   3. 默认不需要数据库：M1~M3 的编译器与校验都是纯内存（ADR-0006）
 
 name: CI
 
@@ -19,10 +19,10 @@ concurrency:
 
 jobs:
   # -------------------------------------------------------------------------
-  # 快圈：只检查新写的代码
+  # 静态检查：全部代码一律从严（本项目不迁移外部代码，见 ADR-0003）
   # -------------------------------------------------------------------------
   lint:
-    name: Ruff (new engine code)
+    name: Ruff
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -34,58 +34,21 @@ jobs:
         with:
           version: "0.16.5"
           args: check
-          src: "./app/engine ./app/llm ./scripts ./tests"
+          src: "./app ./scripts ./tests"
 
       - name: Ruff format check
         uses: astral-sh/ruff-action@v4.1.0
         with:
           version: "0.16.5"
           args: format --check
-          src: "./app/engine ./app/llm ./scripts ./tests"
+          src: "./app ./scripts ./tests"
 
   # -------------------------------------------------------------------------
-  # 慢圈：搬来的 askdb 代码，非阻塞
-  # 等新引擎稳定后逐步收紧，最终去掉 continue-on-error
-  # -------------------------------------------------------------------------
-  lint-legacy:
-    name: Ruff (inherited askdb code, non-blocking)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-
-      - name: Ruff lint (legacy)
-        uses: astral-sh/ruff-action@v4.1.0
-        with:
-          version: "0.16.5"
-          args: check --config ruff-legacy.toml
-          src: "./app/legacy"
-
-  # -------------------------------------------------------------------------
-  # 测试：pgvector service + 假 LLM
+  # 测试：纯内存 + 回放 LLM，不需要数据库
   # -------------------------------------------------------------------------
   tests:
-    name: Pytest (fixture DB, replay LLM)
+    name: Pytest (sqlite fixture, replay LLM)
     runs-on: ubuntu-latest
-
-    # pgvector 而非 stock postgres：向量列与 <-> 运算符只在 pgvector 镜像里有。
-    # 版本必须与 docker-compose.yml 一致，否则本机能过 CI 不过。
-    services:
-      pgvector:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_USER: wenshu
-          POSTGRES_PASSWORD: wenshu
-          POSTGRES_DB: wenshu
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U wenshu -d wenshu"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
 
     env:
       WENSHU_ENV: ci
@@ -94,8 +57,7 @@ jobs:
       WENSHU_LLM_CASSETTE_DIR: tests/cassettes
       # 回放模式下找不到 cassette 必须硬失败，而不是回落到真实调用
       WENSHU_LLM_STRICT_REPLAY: "1"
-      WENSHU_DATABASE_URL: postgresql+psycopg://wenshu:wenshu@localhost:5432/wenshu
-      WENSHU_FIXTURE_URL: postgresql+psycopg://wenshu:wenshu@localhost:5432/bankfixture
+      WENSHU_FIXTURE_URL: "sqlite:///./build/bank_fixture.db"
 
     steps:
       - uses: actions/checkout@v5
@@ -113,33 +75,76 @@ jobs:
         # 生成锁文件后请改为 `uv sync --locked --group dev`
         run: uv sync --group dev
 
-      - name: Seed the bank fixture database
+      - name: Seed the bank fixture database (sqlite)
         run: uv run --no-sync python -m scripts.seed_fixture
 
       - name: Run tests
-        run: uv run --no-sync pytest --durations=10
+        run: uv run --no-sync pytest --durations=10 -m "not db and not oracle"
 
       # 静默跳过是绿流水线的头号谎言：某个 fixture 连不上时用例被 skip，
       # 整个 job 仍然通过，测试却什么也没证明。
       - name: Fail if tests silently skipped
         run: |
-          skipped=$(uv run --no-sync pytest -rs 2>/dev/null | grep -c '^SKIPPED' || true)
+          skipped=$(uv run --no-sync pytest -rs -m "not db and not oracle" 2>/dev/null | grep -c '^SKIPPED' || true)
           echo "skipped: $skipped"
           if [ "$skipped" -gt 0 ]; then
             echo "::error::$skipped tests skipped; expected 0."
-            uv run --no-sync pytest -rs 2>/dev/null | grep '^SKIPPED' || true
+            uv run --no-sync pytest -rs -m "not db and not oracle" 2>/dev/null | grep '^SKIPPED' || true
             exit 1
           fi
 
   # -------------------------------------------------------------------------
-  # 双引擎对照门禁：旧对→新错 是绝对红线
-  # 需要 baseline 文件；在 Step 0 产出之前这个 job 会跳过
+  # 需要真实数据库的用例（方言 / EXPLAIN）。可选，非阻塞，nightly 再收紧。
   # -------------------------------------------------------------------------
-  regression:
-    name: Dual-engine regression gate
+  tests-db:
+    name: Pytest (postgres dialect)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: wenshu
+          POSTGRES_PASSWORD: wenshu
+          POSTGRES_DB: wenshu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U wenshu -d wenshu"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      WENSHU_ENV: ci
+      WENSHU_LLM_MODE: replay
+      WENSHU_LLM_CASSETTE_DIR: tests/cassettes
+      WENSHU_LLM_STRICT_REPLAY: "1"
+      WENSHU_FIXTURE_URL: postgresql+psycopg://wenshu:wenshu@localhost:5432/bankfixture
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --group dev
+      - name: Seed fixture (postgres)
+        run: uv run --no-sync python -m scripts.seed_fixture
+      - name: Run db-marked tests
+        run: uv run --no-sync pytest -m "db or oracle" --durations=10
+
+  # -------------------------------------------------------------------------
+  # 黄金集门禁：引擎产出 vs 手工黄金 SQL（M1.5）。
+  # 只比 SQL 文本：**不需要数据库、不需要模型**（ADR-0006）。
+  # -------------------------------------------------------------------------
+  golden:
+    name: Golden-set gate
     runs-on: ubuntu-latest
     needs: tests
-    if: ${{ hashFiles('eval/baseline_report.json') != '' }}
+    if: ${{ hashFiles('eval/golden/cases.yaml') != '' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -151,22 +156,22 @@ jobs:
 
       - run: uv sync --group dev
 
-      - name: Compare new engine against baseline
-        env:
-          WENSHU_LLM_MODE: replay
-          WENSHU_LLM_CASSETTE_DIR: tests/cassettes
-          WENSHU_LLM_STRICT_REPLAY: "1"
+      # 刻意不灌库：门禁比的是 SQL 结构，不是结果集。
+      # 灌 fixture 要 psycopg + PG 专有语句（ADR-0006 的未决项），
+      # 让它在这里失败，等于因为与门禁无关的原因把门禁判红。
+      - name: Compare engine output against golden SQL
         run: |
-          uv run --no-sync python -m scripts.check_regression \
-            --baseline eval/baseline_report.json \
-            --output eval/current_report.json
+          uv run --no-sync python -m scripts.check_golden \
+            --golden eval/golden \
+            --cases eval/cases \
+            --output eval/golden_report.json
 
-      - name: Upload regression report
+      - name: Upload golden report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: regression-report
+          name: golden-report
           path: |
-            eval/current_report.json
-            eval/regression_summary.md
+            eval/golden_report.json
+            eval/golden_summary.md
           retention-days: 14

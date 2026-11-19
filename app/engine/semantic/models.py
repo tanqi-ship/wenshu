@@ -90,6 +90,154 @@ class Intent:
 
 
 # ---------------------------------------------------------------------------
+# 从配置（YAML / JSON）构造 Intent —— 黄金集与评测集用
+# ---------------------------------------------------------------------------
+
+_TIME_GRAINS = frozenset({"month_end", "day", "month", "quarter", "year", "range"})
+_FILTER_OPERATORS = frozenset({"eq", "in", "between", "gte", "lte"})
+_COMPARISONS = frozenset({"delta", "yoy", "mom", "rate"})
+_SOURCE_MODES = frozenset({"plain", "report", "union"})
+
+_INTENT_KEYS = frozenset(
+    {
+        "metric",
+        "time",
+        "org",
+        "dimensions",
+        "filters",
+        "comparison",
+        "top_n",
+        "top_n_grain",
+        "source_mode",
+    }
+)
+_TIME_KEYS = frozenset({"grain", "raw", "points", "start", "end"})
+_FILTER_KEYS = frozenset({"dimension", "value", "operator", "raw"})
+
+
+def _as_mapping(value: object, what: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{what} 应该是一个映射，当前是 {type(value).__name__}。")
+    return value
+
+
+def _reject_unknown_keys(payload: Mapping[str, object], allowed: frozenset[str], what: str) -> None:
+    """未知键直接报错，绝不静默忽略。
+
+    理由：配置里把 ``dimension`` 手滑写成 ``dimensions``，若被忽略，
+    黄金集会"通过"——但它测的东西已经悄悄变了。配置文件的错必须响。
+    """
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise ValueError(
+            f"{what} 里有不认识的键：{', '.join(unknown)}。允许的键：{', '.join(sorted(allowed))}。"
+        )
+
+
+def _as_date(value: object, what: str) -> date:
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str):
+        raise ValueError(f"{what} 应该是 ISO 日期字符串（如 2026-04-30），当前是 {value!r}。")
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"{what} 不是合法的 ISO 日期：{value!r}") from exc
+
+
+def _choice(value: object, allowed: frozenset[str], what: str) -> str:
+    text = str(value or "").strip()
+    if text not in allowed:
+        raise ValueError(f"{what} 只能是 {', '.join(sorted(allowed))}，当前是 {value!r}。")
+    return text
+
+
+def _time_range_from_mapping(raw: object) -> TimeRange:
+    payload = _as_mapping(raw, "time")
+    _reject_unknown_keys(payload, _TIME_KEYS, "time")
+
+    points_raw = payload.get("points") or ()
+    if isinstance(points_raw, str):
+        raise ValueError("time.points 应该是日期列表，不是单个字符串。")
+    points = tuple(_as_date(point, "time.points") for point in points_raw)
+
+    start = payload.get("start")
+    end = payload.get("end")
+    return TimeRange(
+        grain=_choice(payload.get("grain"), _TIME_GRAINS, "time.grain"),  # type: ignore[arg-type]
+        raw=str(payload.get("raw") or ""),
+        points=points,
+        start=_as_date(start, "time.start") if start is not None else None,
+        end=_as_date(end, "time.end") if end is not None else None,
+    )
+
+
+def _filter_from_mapping(raw: object) -> Filter:
+    payload = _as_mapping(raw, "filters[]")
+    _reject_unknown_keys(payload, _FILTER_KEYS, "filters[]")
+
+    dimension = str(payload.get("dimension") or "").strip()
+    if not dimension:
+        raise ValueError("filters[] 缺少 dimension。")
+    return Filter(
+        dimension=dimension,
+        value=payload.get("value"),
+        operator=_choice(payload.get("operator") or "eq", _FILTER_OPERATORS, "filters[].operator"),  # type: ignore[arg-type]
+        raw=str(payload.get("raw") or ""),
+    )
+
+
+def intent_from_mapping(data: Mapping[str, object]) -> Intent:
+    """从配置结构构造 :class:`Intent`。黄金集用例与评测集用这个入口。
+
+    支持的结构::
+
+        metric: 不良贷款余额
+        time:
+          grain: month_end
+          points: ["2026-04-30"]
+        dimensions: [机构]
+        filters:
+          - dimension: 机构
+            value: "B001"
+
+    三条刻意的约束：
+
+    1. **未知键直接报错**（见 :func:`_reject_unknown_keys`）。
+    2. **时间必须给具体日期**，这里**不**推算"4月末 → 4月30日"。
+       那个推算在 ``compiler/time.py::month_end_range``，属于编译器侧；
+       让加载器去猜日期，等于把不确定性重新请回配置层。
+    3. ``metric`` 是**业务名**（可以写同义词），不是 ``MetricDef.code`` ——
+       符号表查找是编译器的第①步，配置不该替它做决定。
+    """
+    _reject_unknown_keys(data, _INTENT_KEYS, "Intent")
+
+    dimensions_raw = data.get("dimensions") or ()
+    if isinstance(dimensions_raw, str):
+        raise ValueError("dimensions 应该是名称列表，不是单个字符串。")
+    filters_raw = data.get("filters") or ()
+    if isinstance(filters_raw, (str, Mapping)):
+        raise ValueError("filters 应该是列表，每项是一个 dimension/value 映射。")
+
+    time_raw = data.get("time")
+    top_n = data.get("top_n")
+    comparison = data.get("comparison")
+    source_mode = data.get("source_mode")
+
+    return Intent(
+        metric=str(data.get("metric") or "").strip() or None,
+        time_range=_time_range_from_mapping(time_raw) if time_raw is not None else None,
+        org=str(data.get("org") or "").strip() or None,
+        dimensions=tuple(str(item).strip() for item in dimensions_raw if str(item).strip()),
+        filters=tuple(_filter_from_mapping(item) for item in filters_raw),
+        comparison=_choice(comparison, _COMPARISONS, "comparison") if comparison else None,  # type: ignore[arg-type]
+        top_n=int(top_n) if top_n is not None else None,
+        top_n_grain=str(data.get("top_n_grain") or "").strip() or None,
+        source_mode=_choice(source_mode or "plain", _SOURCE_MODES, "source_mode"),  # type: ignore[arg-type]
+    )
+
+
+# ---------------------------------------------------------------------------
 # 语义层元数据（从应用库加载，与物理表结构解耦）
 # ---------------------------------------------------------------------------
 

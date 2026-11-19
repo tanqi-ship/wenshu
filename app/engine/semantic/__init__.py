@@ -1,4 +1,7 @@
-"""语义层领域模型。"""
+"""语义层领域模型。
+
+``intent_from_mapping`` 是"配置 → Intent"的唯一入口（黄金集/评测集用）。
+"""
 
 from app.engine.semantic.models import (
     ColumnDef,
@@ -11,6 +14,7 @@ from app.engine.semantic.models import (
     TableDef,
     TimeGrain,
     TimeRange,
+    intent_from_mapping,
 )
 
 __all__ = [
@@ -24,4 +28,5 @@ __all__ = [
     "TableDef",
     "TimeGrain",
     "TimeRange",
+    "intent_from_mapping",
 ]
