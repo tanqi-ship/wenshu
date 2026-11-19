@@ -1,170 +1,175 @@
-# wenshu —— 银行级智能问数引擎
+# wenshu —— 银行级智能问数引擎（学习项目）
 
-从零设计的 NL2SQL 引擎骨架，目标是**银行口径可控、可解释、可回归**。
+一条主链路：**一句话问题 → Intent → 编译器展开 SQL → 校验 → 出数。**
 
-> **当前状态（第一步）**：后端骨架 + 校验层 + 澄清层 + CI + fixture + 评测集，101 个测试通过。
-> **没有前端**，也**还没有搬入任何 askdb 代码**。详见 `MIGRATION.md`。
+> **定位**：这是**学习与工程实践**项目，不是产品。
+> 目标是把「问数引擎为什么会不准」这件事拆到底，并给出可验证的答案。
+>
+> **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** 完成 ——
+> 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 / 行级权限），
+> 并且有一条命令能回答"引擎现在算得对不对"：
+> `uv run python -m scripts.check_golden`（2 条手写黄金用例，2/2 通过）。**179 个测试全过。**
+> **尚未实现**：Top N、每月 Top N、多表 JOIN、报表 UNION 分支（M2）；
+> `question → Intent` 抽取（M3）；可答性门禁与黄金集扩到 30 条（M4）。见 `docs/ROADMAP.md`。
 
-设计立场（对照参考项目 askdb）：
+---
 
-| | askdb | wenshu |
+## 一、范围：做什么，不做什么
+
+范围是这份文档里最重要的部分。**边界一旦模糊，项目就会变成第二个 askdb。**
+
+### ✅ 做
+
+| # | 模块 | 一句话 |
 |---|---|---|
-| 谁决定用哪些表 | 数据源全部表塞进 prompt，让模型选 | 检索出本次用到的 3~8 张表，AST 强制"只能用检索到的" |
-| 谁写 SQL | 模型直接写，配 5,500 字 prompt 约束 | 模型只产 `Intent`，编译器展开成 SQL（零模型） |
-| 业务规则放哪 | 5,500 字 prompt、51 条"必须禁止"、**零条被验证** | `validation/rules.py`，每条有稳定 code 和单测 |
-| 信息够不够 | 散在 5 个节点的硬编码门禁 | 声明式槽位清单 + 追问预算 |
-| 怎么证明没变差 | 无 | 双引擎对照门禁：**旧对→新错 = 红线** |
+| 1 | **语义层** | 手写 5~10 个指标 / 3~5 个维度的完整定义（指标公式、口径、码值、表关系） |
+| 2 | **编译器** | `Intent + 语义层 + Scope → sqlglot AST → 方言 SQL`，**0 次模型调用** |
+| 3 | **校验层** | 业务规则写成可单测的纯函数，每条有稳定 problem code |
+| 4 | **可答性门禁** | 由语义层的**显式存在性**判定，不用向量距离阈值 |
+| 5 | **澄清** | 声明式槽位清单 + 追问预算 |
+| 6 | **评测** | 黄金集：手工 SQL 对照 + `why_hard` 强制项 |
 
-核心信条来自 NVIDIA auto-ontology 的实测结论：
+### ❌ 不做（明确不做，不是"以后做"）
 
-> **写在 prompt 里的 SQL 规则块，每次实测都让准确率下降。**
-
-所以方向是：**能搬进代码的规则，一条都不留在 prompt 里。**
-
----
-
-## 目录结构
-
-```
-wenshu/
-├── app/                          # 后端（当前唯一存在的代码）
-│   ├── engine/                   # 新引擎（严格 lint，严格测试）
-│   │   ├── semantic/             # 语义层领域模型：Intent / 指标 / 维度 / 表关系
-│   │   ├── retrieval/            # 检索出表范围 + JOIN 路径（待实现，见 Step 2）
-│   │   ├── compiler/             # Intent -> AST -> 方言 SQL（待实现，见 Step 1）
-│   │   ├── validation/           # 只读 / 名字 / 业务规则（已实现）
-│   │   └── clarify/              # 槽位检查 + 追问预算（已实现）
-│   ├── llm/                      # 模型访问边界：Protocol + fake/replay/real
-│   ├── legacy/                   # 待搬入的 askdb 周边代码（Step 0，当前空）
-│   └── config.py
-│
-├── web/                          # ⬜ 前端 —— 尚未创建，Step 0 搬入或重写
-│
-├── eval/
-│   ├── cases/*.yaml              # 评测集（每条必须有 why_hard + covers）
-│   └── baseline_report.json      # 旧引擎基线（Step 0 产出）
-├── fixtures/sql/bank_fixture.sql # 故意的"脏"测试库（D-01 ~ D-11）
-├── scripts/                      # seed / 回归门禁 / 用例校验 / 录制
-├── tests/                        # engine 单测（纯内存）+ cassettes + legacy
-└── docs/DECISIONS.md             # 架构决策记录（LangGraph、embedding 等）
-```
-
-### 前端在哪？
-
-**现在没有。** 这是有意的，不是遗漏：
-
-1. 本次交付是**垂直切片**：先把"一个指标从提问到出数"这条最短路径跑通，
-   前端在这一步不产生信息。
-2. 前端要覆盖的是会话列表、结果表、分页、导出、图表、指标卡、SQL 预览、
-   追问交互、场景下拉——这些**依赖引擎的输出形态定型**。引擎还在变的时候写前端，
-   改起来比写起来贵。
-3. 计划放在同仓库的 `web/` 下（monorepo，两个可部署单元）。
-   理由：接口和界面一起改的 PR 能原子提交；CI 一次跑两边的 lint；
-   新同事一次 clone 就能跑全栈。部署仍然是分开的（后端镜像 + 前端静态资源）。
-
-技术栈待定，见 `docs/DECISIONS.md` 末尾的"待决事项"。
+| 不做 | 理由 |
+|---|---|
+| 前端 / 管理后台 | 与"问题→SQL"零关系，且引擎输出形态还在变 |
+| 用户 / 角色 / 登录 / JWT / RBAC 表 | 权限只做 `Scope` 输入对象，不做权限系统（见 ADR-0004） |
+| 场景管理 / 知识库管理 / 提示词后台 | 那是产品功能 |
+| 多数据源连接器 | 只 SQLite（默认）+ 可选 PostgreSQL（见 ADR-0006） |
+| 归因分析 / 图表 / 指标卡 / 明细导出 | 下游展示，不属于引擎 |
+| 迁移 askdb 的任何代码 | 见 ADR-0003。askdb 只作为**阅读标本**，见 `docs/REFERENCES.md` |
 
 ---
 
-## 快速开始
+## 二、架构（四层流水线）
 
-```bash
-uv sync --group dev          # 或 pip install -e . && pip install pytest pytest-asyncio ruff PyYAML
-
-cp .env.example .env
-docker compose up -d pgvector bankdb
-
-uv run python -m scripts.seed_fixture     # 灌假银行库
-uv run pytest                             # 101 passed，不需要数据库/模型/网络
-uv run ruff check app/engine app/llm scripts tests
 ```
+                    ┌─────────────────────────────────────────┐
+   L0  输入边界      │  语义层（知识：指标/维度/码值/表关系）      │  ← 数据，可配置
+                    │  Scope （权限：表/列/行策略）              │  ← 输入参数
+                    └─────────────────────────────────────────┘
+                                     ↓
+   L1  理解          question ──LLM──> Intent                     ← 唯一一次模型调用
+                                     ↓
+   L2  门禁          可答性判定：Intent 的每个槽位能否在语义层落地？
+                        ├─ 全部落地 → 编译
+                        ├─ 部分落地 → 澄清（只问缺的那个）
+                        └─ 指标不存在/无权限 → 拒答（原因可解释）
+                                     ↓
+   L3  编译          Intent + 语义层 + Scope → AST → 方言 SQL     ← 0 次模型调用
+                                     ↓
+   L4  校验          AST → Problem[]  （0 次模型调用）              ← 与 L3 独立
+                                     ↓
+   L5  执行          SQL → rows（只读、行数上限、超时）
+```
+
+**三个必须记住的架构约束：**
+
+1. **SQL 只在 L3 一处生成。** 因此权限只能在 L3 一处注入、校验只需在 L4 一处复核。
+2. **L3 和 L4 必须互相独立。** L4 不复用 L3 的任何中间产物，否则编译器的 bug 会被自己的校验放过。
+3. **L1 是唯一允许不确定的地方。** 它的输出被 L2 收窄成一个有限、可枚举的结构。
+
+细节见 `docs/ARCHITECTURE.md`。
 
 ---
 
-## 三条必须从第一天遵守的纪律
+## 三、三条必须从第一天遵守的纪律
 
 ### 1. CI 里绝不调用真实模型
 
-`app/llm/` 的三个实现由 `WENSHU_LLM_MODE` 选择：
+`app/llm/` 三个实现由 `WENSHU_LLM_MODE` 选择：
 
 | 模式 | 实现 | 用在哪 |
 |---|---|---|
 | `fake` | `FakeLLM` 按脚本返回 | 单元测试 |
-| `replay` | `ReplayLLM` 回放 cassette | **CI / 回归门禁** |
-| `real` | `OpenAICompatLLM` | 本地 / 生产 |
+| `replay` | `ReplayLLM` 回放 cassette | CI / 黄金集门禁 |
+| `real` | `OpenAICompatLLM` | 本地手动验证 |
 
-回放**找不到记录时抛 `ReplayMiss`，绝不联网**。这条是硬的：
-否则 CI 会在某天悄悄开始调真实模型，慢、花钱、结果不可复现，而流水线还是绿的。
-
-`HashEmbedder` 让检索管道能在零网络下跑通——它语义质量为零，
-只用于证明管道可跑，**不用于评测召回率**。
+回放**找不到记录时抛 `ReplayMiss`，绝不联网**。否则 CI 会在某天悄悄开始调真实模型，慢、花钱、结果不可复现，而流水线还是绿的。
 
 ### 2. 规则进代码，不进 prompt
 
-见 `app/engine/validation/rules.py`：
+`app/engine/validation/rules.py` 里的 6 条规则，每条都有：稳定 problem code + 业务规则编号（`C-xx`）+ 单测。
 
-```
-R-NAME-001  名称字段禁止出现在 GROUP BY        (C-11)
-R-PCT-001   百分比指标禁止 * 100               (C-07)
-R-COMP-001  多时点对比禁止用子查询查另一时点    (C-05)
-R-TOPN-001  每月 Top N 必须用窗口函数          (C-12)
-R-TBL-001   ETL 分支最多 2 张表                (C-04)
-R-JOIN-001  报表/UNION 分支禁止 JOIN           (C-06)
-```
+这不是凭空的偏好。NVIDIA auto-ontology 在它的 ReAct 提示词 docstring 里给出了他们的实测结论：
 
-每条都有：稳定 problem code（评测按 code 聚合定位退化）、业务规则编号
-（业务方复核）、单测覆盖（规则本身不会写错）。
+> "rule blocks in the writer prompt **lost accuracy every time they were measured**"
+> —— `auto_ontology/retrieval/text_to_sql/react/prompts.py:7-10`
+
+**注意边界**：那是他们在「ReAct + 策略训练」语境下的结论，原句后半段是 "a policy being trained should learn conventions from reward, not from a list"。**本项目把它当假设，不当定论**——验证方式是黄金集评测（M4）。
 
 ### 3. 重试必须携带原 SQL
 
 `ValidationResult.feedback()` 只生成问题清单，**原 SQL 必须由重试构造器一起回灌**。
 
-askdb 的重试只回传错误信息、没回传原 SQL，而 prompt 里还写着
-"优先在原 SQL 结构上做局部修复"——模型看不到原 SQL，
-所谓"修复"实际退化成重新抽签。这是它重试经常到上限仍失败的原因。
+askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写着"优先在原 SQL 结构上做局部修复"——模型看不到原 SQL，所谓"修复"实际退化成重新抽签。
 
 ---
 
-## 评测集就是需求清单
+## 四、快速开始
 
-```yaml
-- id: AQ-006
-  why_hard: |
-    fixture 里有两张报表都叫 npl_rate：一张按五级分类（标准口径），
-    一张按逾期 90 天以上（另一口径）。LP03 前者 0.1407、后者 0.1283。
-    命中错的那张，SQL 完全合法、数字看着也合理，但口径是错的。
-  covers: [D-04, D-11, C-06]
+```bash
+uv sync --group dev
+uv run pytest                                # 179 passed，不需要数据库 / 模型 / 网络
+uv run ruff check .                          # All checks passed
+uv run python -m scripts.demo_ask            # 端到端演示：问题 → Intent → SQL → 校验
+uv run python -m scripts.check_golden        # 黄金集门禁：引擎产出 vs 手写黄金 SQL
+uv run python -m scripts.trace_compile       # 学习工具：把编译器五步逐个打出来
 ```
 
-* `why_hard` —— **写不出"为什么容易错"，说明这条用例测不出东西**
-* `covers` —— 引用 fixture 缺陷编号（`D-xx`）和规则编号（`C-xx`）
-
-`python -m scripts.validate_cases eval/cases` 强制检查这两项。
-
-## 双引擎回归门禁
-
-| 判定 | 后果 |
-|---|---|
-| 旧对 → 新错 | **失败（红线）** |
-| 缺用例 | **失败** |
-| 准确率下降 > 2pp | **失败** |
-| LLM 调用数 +10% / 耗时 +50% | 警告 |
-| 旧错 → 新对 | 记录为 improvement |
+**fixture 数据库默认用 SQLite，零依赖**（ADR-0006）。PostgreSQL 只在需要方言 / EXPLAIN 验证时可选启用。
 
 ---
 
-## 路线图
+## 五、文档索引
 
-- [x] 工程骨架 + CI（分圈 lint / pgvector / skip guard）
-- [x] 模型访问边界（Protocol + fake / replay / real）
-- [x] 校验层：只读、名字、范围、6 条业务规则
-- [x] 澄清层：槽位清单 + 追问预算
-- [x] 假银行 fixture（D-01 ~ D-11）+ 评测集 10 条
-- [x] 双引擎回归门禁
-- [ ] **Step 0**：搬入 askdb 周边代码（含 `web/`），跑出 `baseline_report.json`
-- [ ] **Step 1**：替换 SQL 生成（语义层检索 + 编译器）
-- [ ] **Step 2**：替换检索范围（retrieve + `TABLE_NOT_IN_SCOPE`）+ 混合召回/重排
-- [ ] **Step 3**：替换编排（24 节点 DAG → 显式状态机）
-- [ ] **Step 4**：替换分诊 + 统一澄清
+| 文档 | 看什么 |
+|---|---|
+| **`docs/CONTEXT.md`** | ★ **新会话/新同事先读这一份**：项目是什么、做到哪了、我们在替代 askdb 的哪一步、怎么跑、踩过哪些坑 |
+| `docs/ARCHITECTURE.md` | 分层、数据流、编译器内部结构、错误分类、`Scope` 三个注入点 |
+| `docs/DECISIONS.md` | 已定的架构决策（ADR），每条都写了"什么情况下翻案" |
+| `docs/ROADMAP.md` | M0~M4 里程碑，每步的验收标准和对应评测用例 |
+| `docs/REFERENCES.md` | 读 askdb / auto-ontology **该读哪些文件**（学习地图，不是迁移计划） |
+| `ATTRIBUTION.md` | 代码来源与设计参考登记 |
+| `fixtures/sql/bank_fixture.sql` | 故意"脏"的测试库，文件末尾列了 D-01~D-11 共 11 项缺陷 |
+| `eval/cases/*.yaml` | 评测集，每条必须有 `why_hard` + `covers` |
+| `eval/golden/` | 黄金集：`cases.yaml`（用例 = `Intent` + 指向黄金 SQL）+ `G-xxx.sql`（**手写**标准答案） |
 
-细节见 `MIGRATION.md`；已定的架构决策见 `docs/DECISIONS.md`。
+---
+
+## 六、目录结构
+
+```
+wenshu/
+├── app/
+│   ├── engine/
+│   │   ├── semantic/       # L0 语义层领域模型（Intent / MetricDef / DimensionDef / RelationDef）
+│   │   │                   #    + bank_mini.py：演示与测试共用的唯一一份假语义层
+│   │   ├── compiler/       # L3 编译器（0 次模型）
+│   │   ├── validation/     # L4 校验层（只读 / 名字 / 范围 / 6 条业务规则 → M2 补到 8 条）
+│   │   ├── clarify/        # L1/L2 意图清洗 + 确定性槽位检查
+│   │   ├── retrieval/      # L2 检索式定范围：按业务词找候选表/列/指标（M3）
+│   │   └── coverage/       # L2 可答性门禁：COMPILE / CLARIFY / REFUSE（M4）
+│   ├── llm/                # 模型访问边界：Protocol + fake / replay / real
+│   └── config.py
+├── eval/cases/             # 评测集（yaml，带 why_hard / covers）
+├── eval/golden/            # 黄金集：cases.yaml + G-xxx.sql（手写标准答案）
+├── fixtures/sql/           # 假银行库 DDL + 缺陷清单 D-01~D-11
+├── scripts/                # demo_ask / check_golden / golden / seed_fixture / trace_compile …
+├── tests/                  # engine 单测（纯内存）+ cassettes
+└── docs/                   # 上下文 / 架构 / 决策 / 路线图 / 参考地图
+```
+
+---
+
+## 七、这个项目要回答的问题
+
+不是为了"做一个问数系统"，而是为了回答这四个问题，每个都要有数据：
+
+1. **把 SQL 从模型手里拿走，准确率能提高多少？** → 黄金集对照（M4）
+2. **哪些业务规则可以代码化，哪些只能留在 prompt？** → `validation/rules.py` 的边界
+3. **问数到底需要多少次模型调用？** → 编译路径 0 次，理解路径 1 次
+4. **"答不了"和"没权限"能不能分开告诉用户？** → `Scope` + 可解释拒答
+
+回答不出来的部分，会如实写成"未验证"，而不是当成结论。
