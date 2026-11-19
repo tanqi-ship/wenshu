@@ -48,9 +48,7 @@ class TestOnlyReadQueries:
         assert "SQL_NOT_READ_QUERY" in _codes(result)
 
     def test_multiple_statements_are_rejected(self, catalog: Catalog) -> None:
-        result = validate_sql(
-            "SELECT 1; DROP TABLE qa_loan_acc_detail", catalog=catalog, dialect=DIALECT
-        )
+        result = validate_sql("SELECT 1; DROP TABLE qa_loan_acc_detail", catalog=catalog, dialect=DIALECT)
         assert not result.ok
         assert "SQL_MULTI_STATEMENT" in _codes(result)
 
@@ -69,9 +67,7 @@ class TestForbiddenFunctions:
         "func",
         ["pg_sleep(1)", "pg_read_file('/etc/passwd')", "dblink('x','y')"],
     )
-    def test_side_effecting_functions_are_rejected(
-        self, catalog: Catalog, func: str
-    ) -> None:
+    def test_side_effecting_functions_are_rejected(self, catalog: Catalog, func: str) -> None:
         result = validate_sql(f"SELECT {func}", catalog=catalog, dialect=DIALECT)
         assert not result.ok
         assert "SQL_FORBIDDEN_FUNCTION" in _codes(result)
@@ -115,9 +111,7 @@ class TestParseSingleStatement:
         assert statement is not None
         assert problems == []
 
-    def test_fatal_problems_block_further_checks(
-        self, catalog: Catalog, policy: ValidationPolicy
-    ) -> None:
+    def test_fatal_problems_block_further_checks(self, catalog: Catalog, policy: ValidationPolicy) -> None:
         """解析失败时不应继续跑业务规则 —— 否则会看到一堆莫名其妙的警告。"""
         result = validate_sql("NOT SQL AT ALL", catalog=catalog, dialect=DIALECT, policy=policy)
         assert result.codes == ["SQL_PARSE_ERROR"]

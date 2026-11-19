@@ -22,8 +22,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, Sequence, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 Role = Literal["system", "user", "assistant"]
 
@@ -81,8 +82,7 @@ class LLMClient(Protocol):
         temperature: float = 0.0,
         max_tokens: int = 4096,
         timeout_s: float = 120.0,
-    ) -> Completion:
-        ...
+    ) -> Completion: ...
 
 
 @runtime_checkable
@@ -93,8 +93,7 @@ class Embedder(Protocol):
     """
 
     @property
-    def dim(self) -> int:
-        ...
+    def dim(self) -> int: ...
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         """返回与 ``texts`` 等长的向量列表。"""

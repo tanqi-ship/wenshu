@@ -147,9 +147,7 @@ def compare(baseline: Report, current: Report) -> list[Finding]:
             )
 
     if baseline.avg_duration_ms:
-        growth = (
-            100.0 * (current.avg_duration_ms - baseline.avg_duration_ms) / baseline.avg_duration_ms
-        )
+        growth = 100.0 * (current.avg_duration_ms - baseline.avg_duration_ms) / baseline.avg_duration_ms
         if growth > SLOWER_LIMIT_PCT:
             findings.append(
                 Finding(

@@ -29,9 +29,7 @@ from app.engine.semantic.models import Intent
 from app.engine.validation.policy import ValidationPolicy
 from app.engine.validation.problems import Problem
 
-_RANK_FUNCTIONS = frozenset(
-    {"row_number", "rank", "dense_rank", "ntile", "percent_rank", "cume_dist"}
-)
+_RANK_FUNCTIONS = frozenset({"row_number", "rank", "dense_rank", "ntile", "percent_rank", "cume_dist"})
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +121,7 @@ def percentage_metric_scaled(
                     code="PERCENTAGE_SCALE_SUSPECT",
                     rule="C-07",
                     severity="warning",
-                    message=(
-                        "表达式里出现了「聚合除法 * 100」，如果这是百分比指标，"
-                        "请去掉 * 100。"
-                    ),
+                    message=("表达式里出现了「聚合除法 * 100」，如果这是百分比指标，请去掉 * 100。"),
                 )
             )
 
@@ -240,9 +235,7 @@ def table_count_exceeded(
         Problem(
             code="TOO_MANY_TABLES",
             rule="C-04",
-            message=(
-                f"明细分支最多使用 {policy.max_tables_plain} 张表，当前用了 {count} 张。"
-            ),
+            message=(f"明细分支最多使用 {policy.max_tables_plain} 张表，当前用了 {count} 张。"),
         )
     ]
 
@@ -262,10 +255,7 @@ def join_not_allowed(
         Problem(
             code="JOIN_NOT_ALLOWED",
             rule="C-06",
-            message=(
-                f"{intent.source_mode} 分支不允许 JOIN。"
-                "多张报表请分别查询后用 UNION ALL 合并。"
-            ),
+            message=(f"{intent.source_mode} 分支不允许 JOIN。多张报表请分别查询后用 UNION ALL 合并。"),
         )
     ]
 
@@ -293,9 +283,7 @@ def _filters_snapshot(select: exp.Select, column: str) -> bool:
     for equality in where.find_all(exp.EQ):
         if _nearest_select(equality) is not select:
             continue
-        if _references_column(equality.this, target) or _references_column(
-            equality.expression, target
-        ):
+        if _references_column(equality.this, target) or _references_column(equality.expression, target):
             return True
     return False
 
@@ -303,10 +291,7 @@ def _filters_snapshot(select: exp.Select, column: str) -> bool:
 def _references_column(node: exp.Expression | None, target: str) -> bool:
     if node is None:
         return False
-    for column in node.find_all(exp.Column):
-        if column.name and column.name.lower() == target:
-            return True
-    return False
+    return any(column.name and column.name.lower() == target for column in node.find_all(exp.Column))
 
 
 def _is_number(node: exp.Expression | None, value: float) -> bool:

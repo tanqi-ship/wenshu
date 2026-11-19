@@ -102,9 +102,7 @@ def check_columns(
     2. 字段名就是某个 SELECT 别名 —— 外层可以合法引用它。
     """
     derived = _derived_names(statement)
-    output_aliases = {
-        alias.alias.lower() for alias in statement.find_all(exp.Alias) if alias.alias
-    }
+    output_aliases = {alias.alias.lower() for alias in statement.find_all(exp.Alias) if alias.alias}
 
     table_columns: dict[str, set[str] | None] = {}
     for _table, name, schema in _iter_physical_tables(statement):
@@ -137,14 +135,17 @@ def check_columns(
         if derived or name.lower() in output_aliases:
             continue
         known = {col for cols in table_columns.values() if cols for col in cols}
-        if table_columns and all(cols is not None for cols in table_columns.values()):
-            if name.lower() not in known:
-                problems.append(
-                    Problem(
-                        code="UNKNOWN_COLUMN",
-                        message=f"列不存在：{name}{_suggest(name, known)}",
-                    )
+        if (
+            table_columns
+            and all(cols is not None for cols in table_columns.values())
+            and name.lower() not in known
+        ):
+            problems.append(
+                Problem(
+                    code="UNKNOWN_COLUMN",
+                    message=f"列不存在：{name}{_suggest(name, known)}",
                 )
+            )
 
     return _dedupe(problems)
 

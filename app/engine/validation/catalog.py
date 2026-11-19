@@ -32,8 +32,7 @@ class Catalog:
         schemas: dict[str, dict[str, set[str]]] = {}
         for schema, tables in mapping.items():
             schemas[schema.lower()] = {
-                table.lower(): {column.lower() for column in columns}
-                for table, columns in tables.items()
+                table.lower(): {column.lower() for column in columns} for table, columns in tables.items()
             }
         default = next(iter(schemas), "")
         return cls(schemas=schemas, default_schema=default)
@@ -70,11 +69,7 @@ class Catalog:
         return merged
 
     def all_tables(self) -> set[tuple[str, str]]:
-        return {
-            (schema, table)
-            for schema, tables in self.schemas.items()
-            for table in tables
-        }
+        return {(schema, table) for schema, tables in self.schemas.items() for table in tables}
 
     def resolve(self, table: str, schema: str | None) -> tuple[str, str] | None:
         """把 (schema?, table) 解析成唯一的 (schema, table)。

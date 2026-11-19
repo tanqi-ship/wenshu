@@ -109,8 +109,4 @@ def select_output_aliases(statement: exp.Expression) -> list[str]:
     outer = statement if isinstance(statement, exp.Select) else statement.find(exp.Select)
     if outer is None:
         return []
-    return [
-        projection.alias_or_name
-        for projection in outer.expressions
-        if projection.alias_or_name
-    ]
+    return [projection.alias_or_name for projection in outer.expressions if projection.alias_or_name]

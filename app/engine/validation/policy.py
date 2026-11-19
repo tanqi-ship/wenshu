@@ -2,6 +2,10 @@
 
 所有银行特有的约定都放在这里，而不是散在代码里硬编码。
 换一家银行只需要换一份 :class:`ValidationPolicy`，校验器本身不动。
+
+:class:`Scope` 已经上移到 :mod:`app.engine.scope` —— 编译器和校验器都要用它，
+放在校验包里会让依赖方向变成"编译器依赖校验器"，而 ADR-0005 要求两者独立。
+这里保留 re-export，现有 import 不受影响。
 """
 
 from __future__ import annotations
@@ -9,33 +13,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from app.engine.scope import RowPolicy, Scope
+
 SourceMode = Literal["plain", "report", "union"]
 
-
-@dataclass(frozen=True, slots=True)
-class Scope:
-    """本次提问允许使用的表。
-
-    来自检索阶段实际返回给模型的表 —— 不是"整个数据源"。
-    模型只允许用检索到的东西，由 ``tables_out_of_scope`` 强制。
-    """
-
-    tables: frozenset[str] = frozenset()
-
-    @classmethod
-    def of(cls, names: list[str] | tuple[str, ...] | set[str]) -> Scope:
-        return cls(tables=frozenset(name.lower() for name in names if name))
-
-    def allows(self, table: str, schema: str | None = None) -> bool:
-        lowered = table.lower()
-        if lowered in self.tables:
-            return True
-        if schema:
-            return f"{schema.lower()}.{lowered}" in self.tables
-        return False
-
-    def __bool__(self) -> bool:
-        return bool(self.tables)
+__all__ = ["RowPolicy", "Scope", "SourceMode", "ValidationPolicy"]
 
 
 @dataclass(frozen=True, slots=True)

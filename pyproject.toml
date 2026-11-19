@@ -5,8 +5,8 @@ description = "银行级智能问数引擎：语义层 + 编译器 + 有界检�
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 
-# 依赖刻意保持精简：不引入 LangChain 等重型框架。
-# 来源：askdb/backend/requirements.txt（16 项），经作者许可。
+# 依赖刻意保持精简：不引入 LangChain 等重型框架（ADR-0001）。
+# 清单参考 askdb/backend/requirements.txt。
 dependencies = [
     "fastapi==0.136.3",
     "uvicorn[standard]==0.49.0",
@@ -43,14 +43,13 @@ build-backend = "hatchling.build"
 packages = ["app"]
 
 # ---------------------------------------------------------------------------
-# Ruff —— 分圈策略
-#   app/legacy/ 是从 askdb 搬进来的代码，暂不参与 lint（见 ruff-legacy.toml）
-#   新代码（app/engine, app/llm, scripts, tests）从严
+# Ruff —— 全部代码一律从严。
+# 本项目不迁移外部代码（ADR-0003），因此没有"宽松圈"。
 # ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 110
 target-version = "py312"
-extend-exclude = ["app/legacy", ".venv", "build", "dist"]
+extend-exclude = [".venv", "build", "dist", "eval", "fixtures"]
 
 [tool.ruff.lint]
 select = [
@@ -65,7 +64,12 @@ select = [
     "RUF",  # ruff-specific
 ]
 ignore = [
-    "E501",   # 行长由 formatter 负责
+    "E501",    # 行长由 formatter 负责
+    # 本项目是中文代码库：docstring / 注释里的全角标点是**正确写法**，
+    # 不是"有歧义的 unicode 字符"。这三条一开就是 860+ 条误报，会把真问题淹掉。
+    "RUF001",  # 字符串里的歧义 unicode
+    "RUF002",  # docstring 里的歧义 unicode
+    "RUF003",  # 注释里的歧义 unicode
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -78,6 +82,8 @@ indent-style = "space"
 
 # ---------------------------------------------------------------------------
 # Pytest
+#   db / oracle 打标记的用例不进入默认跑（ADR-0006：默认 SQLite、零依赖）
+#   golden 用于黄金集对照测试
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -85,7 +91,7 @@ pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "-q --strict-markers"
 markers = [
-    "dual: 双引擎对照测试（慢，需要 baseline）",
-    "db: 需要真实数据库连接",
+    "golden: 黄金集对照测试（引擎产出 vs eval/golden 手工 SQL）",
+    "db: 需要真实数据库连接（默认跳过）",
     "oracle: 需要 Oracle 连接（nightly）",
 ]

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.llm.protocol import (
     Completion,

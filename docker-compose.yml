@@ -1,40 +1,45 @@
-# 本地开发环境。
+# 可选的数据库服务。
 #
-# 两个库：
-#   pgvector  —— 应用库（元数据、语义层、评测结果）+ 向量列
-#   bankdb    —— 目标业务库（"假银行" fixture），被问数的那个库
+# ⚠️ **默认什么都不启动。** 这不是疏漏，是 ADR-0006 的结论：
 #
-# Oracle 走独立 profile，因为镜像约 1.5GB，日常开发不必启动：
-#   docker compose up -d pgvector bankdb
-#   docker compose --profile oracle up -d          # 需要验证 Oracle 方言时
+#   M1~M3（编译 / 校验 / 澄清 / 可答性）全部是纯内存计算，只依赖 sqlglot。
+#   它们**不需要任何数据库**。默认 fixture 用 SQLite 文件，零服务。
+#
+# 什么时候才需要这里的服务：
+#
+#   1. 需要验证方言差异（DATE 字面量、DUAL、TO_CHAR、NULL 排序）  → profile: pg / oracle
+#   2. 需要 EXPLAIN 预检作为校验的一层                          → profile: pg / oracle
+#   3. L5 执行层要用真实数据库而不是 SQLite（M3.4 之后）          → profile: pg
+#
+# 用法：
+#
+#   docker compose --profile pg up -d          # PostgreSQL fixture
+#   docker compose --profile oracle up -d      # Oracle fixture（约 1.5GB，慢）
+#   docker compose --profile pg down -v        # 清理
+#
+# ADR-0002 另外论证过：这个规模（语义层 3300 个文档 ≈ 13.5MB）
+# **不需要向量数据库**，numpy 暴力余弦是亚毫秒级。所以这里没有 pgvector。
 
 services:
-  pgvector:
-    image: pgvector/pgvector:pg17
-    container_name: wenshu-pgvector
-    environment:
-      POSTGRES_USER: wenshu
-      POSTGRES_PASSWORD: wenshu
-      POSTGRES_DB: wenshu
-    ports:
-      - "5433:5432"          # 宿主 5433，避免与本机已有 Postgres 冲突
-    volumes:
-      - pgvector_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U wenshu -d wenshu"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
+  # ---------------------------------------------------------------------------
+  # PostgreSQL —— 验证方言 / EXPLAIN 用。
+  # 端口 5433 是为了避开本机可能已有的 Postgres。
+  # ---------------------------------------------------------------------------
   bankdb:
+    profiles: ["pg"]
     image: postgres:17
     container_name: wenshu-bankdb
     environment:
       POSTGRES_USER: bankfixture
       POSTGRES_PASSWORD: bankfixture
       POSTGRES_DB: bankfixture
+      # ★ 容器默认是 UTC。银行问数里"截至今天""本月"这类相对时间一旦按 UTC 算，
+      #   在北京时间 00:00~08:00 之间会整整差一天甚至差一个月。
+      #   所以两个服务都显式钉住时区，而不是依赖宿主机。
+      TZ: Asia/Shanghai
+      PGTZ: Asia/Shanghai
     ports:
-      - "5434:5432"
+      - "5433:5432"
     volumes:
       - bankdb_data:/var/lib/postgresql/data
     healthcheck:
@@ -44,8 +49,8 @@ services:
       retries: 20
 
   # ---------------------------------------------------------------------------
-  # 可选：Oracle 目标库。生产方言是 Oracle，fixture 里的多数 DDL 差异
-  # （DATE 字面量、DUAL、TO_CHAR、NULL 排序）只有在这里才能测到。
+  # Oracle —— 生产方言。fixture 里的 DDL 差异只有在这里才能测到。
+  # 单独 profile，因为镜像大约 1.5GB 且启动慢（首次 1~2 分钟）。
   # ---------------------------------------------------------------------------
   bankdb-oracle:
     profiles: ["oracle"]
@@ -55,6 +60,7 @@ services:
       ORACLE_PASSWORD: oracle
       APP_USER: bankfixture
       APP_USER_PASSWORD: bankfixture
+      TZ: Asia/Shanghai
     ports:
       - "1521:1521"
     volumes:
@@ -66,6 +72,5 @@ services:
       retries: 40
 
 volumes:
-  pgvector_data:
   bankdb_data:
   oracle_data:

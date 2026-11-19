@@ -127,9 +127,7 @@ class Settings:
                 raise ValueError(f"llm_mode=real 需要配置：{', '.join(missing)}")
 
         if self.llm_mode == "replay" and not self.llm_cassette_dir.exists():
-            raise ValueError(
-                f"llm_mode=replay 但 cassette 目录不存在：{self.llm_cassette_dir}"
-            )
+            raise ValueError(f"llm_mode=replay 但 cassette 目录不存在：{self.llm_cassette_dir}")
 
         if self.embed_mode == "real":
             missing = [
@@ -150,9 +148,7 @@ class Settings:
 def _llm_mode(raw: str) -> LLMMode:
     value = (raw or "fake").lower()
     if value not in {"fake", "replay", "real"}:
-        raise ValueError(
-            f"WENSHU_LLM_MODE 必须是 fake / replay / real，当前为 {raw!r}"
-        )
+        raise ValueError(f"WENSHU_LLM_MODE 必须是 fake / replay / real，当前为 {raw!r}")
     return value  # type: ignore[return-value]
 
 

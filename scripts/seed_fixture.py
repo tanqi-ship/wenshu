@@ -36,13 +36,10 @@ def seed(url: str, sql: str) -> None:
     try:
         import psycopg
     except ModuleNotFoundError as exc:  # pragma: no cover - 取决于本地环境
-        raise SystemExit(
-            "缺少 psycopg。请先 `uv sync` 或 `pip install 'psycopg[binary]'`。"
-        ) from exc
+        raise SystemExit("缺少 psycopg。请先 `uv sync` 或 `pip install 'psycopg[binary]'`。") from exc
 
-    with psycopg.connect(url, autocommit=True) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(sql)
+    with psycopg.connect(url, autocommit=True) as connection, connection.cursor() as cursor:
+        cursor.execute(sql)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,9 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"字符数：{len(sql)}")
         print(f"语句数（按分号粗分）：{len(statements)}")
         tables = [
-            line.strip()
-            for line in sql.splitlines()
-            if line.strip().upper().startswith("CREATE TABLE")
+            line.strip() for line in sql.splitlines() if line.strip().upper().startswith("CREATE TABLE")
         ]
         print(f"CREATE TABLE：{len(tables)} 条")
         for statement in tables:

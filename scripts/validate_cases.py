@@ -71,9 +71,7 @@ def validate_case(case: dict[str, Any], *, seen: set[str]) -> list[str]:
     if has_sql and not expected.get("tables"):
         problems.append(f"[{case_id}] 有 standard_sql 但没有 expected.tables")
     if not has_sql and not (expected.get("behavior") or expected.get("result")):
-        problems.append(
-            f"[{case_id}] 没有 standard_sql 时，expected 必须给出 behavior 或 result"
-        )
+        problems.append(f"[{case_id}] 没有 standard_sql 时，expected 必须给出 behavior 或 result")
 
     return problems
 

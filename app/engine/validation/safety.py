@@ -76,9 +76,7 @@ def parse_single_statement(
         ]
 
     if not statements:
-        return None, [
-            Problem(code="SQL_EMPTY", message="没有拿到任何 SQL 语句。", severity="fatal")
-        ]
+        return None, [Problem(code="SQL_EMPTY", message="没有拿到任何 SQL 语句。", severity="fatal")]
 
     if len(statements) > 1:
         return None, [

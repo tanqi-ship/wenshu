@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import httpx
 
 from app.llm.protocol import (
@@ -77,9 +79,7 @@ class OpenAICompatLLM:
             raise LLMTransportError(f"模型调用网络错误：{type(exc).__name__}: {exc}") from exc
 
         if response.status_code >= 400:
-            raise LLMTransportError(
-                f"模型调用返回 {response.status_code}：{response.text[:400]}"
-            )
+            raise LLMTransportError(f"模型调用返回 {response.status_code}：{response.text[:400]}")
 
         try:
             body = response.json()

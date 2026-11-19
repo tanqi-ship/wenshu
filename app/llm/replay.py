@@ -70,8 +70,7 @@ class Cassette:
         version = raw.get("version")
         if version != CASSETTE_VERSION:
             raise ReplayMiss(
-                f"cassette 版本不匹配: {path} 是 v{version}，期望 v{CASSETTE_VERSION}。"
-                "请重新录制。"
+                f"cassette 版本不匹配: {path} 是 v{version}，期望 v{CASSETTE_VERSION}。请重新录制。"
             )
         return cls(path=path, entries=dict(raw.get("entries") or {}), model=raw.get("model", ""))
 

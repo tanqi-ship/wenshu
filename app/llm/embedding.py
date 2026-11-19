@@ -91,9 +91,7 @@ class OpenAICompatEmbedder:
                         headers=self._headers(),
                     )
                 if response.status_code >= 400:
-                    raise LLMTransportError(
-                        f"embedding 返回 {response.status_code}：{response.text[:300]}"
-                    )
+                    raise LLMTransportError(f"embedding 返回 {response.status_code}：{response.text[:300]}")
                 body = response.json()
                 vectors = [item["embedding"] for item in body["data"]]
                 if vectors and not self._dim:

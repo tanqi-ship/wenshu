@@ -35,9 +35,7 @@ class TestTableNames:
                 "rpt": {"t_loan": ["amt"]},
             }
         )
-        result = validate_sql(
-            "SELECT SUM(amt) FROM t_loan", catalog=catalog, dialect=DIALECT
-        )
+        result = validate_sql("SELECT SUM(amt) FROM t_loan", catalog=catalog, dialect=DIALECT)
         assert not result.ok
         assert "AMBIGUOUS_TABLE" in result.codes
 
@@ -48,9 +46,7 @@ class TestTableNames:
                 "rpt": {"t_loan": ["amt"]},
             }
         )
-        result = validate_sql(
-            "SELECT SUM(amt) FROM etl.t_loan", catalog=catalog, dialect=DIALECT
-        )
+        result = validate_sql("SELECT SUM(amt) FROM etl.t_loan", catalog=catalog, dialect=DIALECT)
         assert "AMBIGUOUS_TABLE" not in result.codes
 
 
@@ -66,9 +62,7 @@ class TestColumnNames:
         assert "current_balnc_cny" in problem.message
 
     def test_star_is_not_flagged(self, catalog: Catalog) -> None:
-        result = validate_sql(
-            "SELECT COUNT(*) FROM qa_loan_acc_detail", catalog=catalog, dialect=DIALECT
-        )
+        result = validate_sql("SELECT COUNT(*) FROM qa_loan_acc_detail", catalog=catalog, dialect=DIALECT)
         assert "UNKNOWN_COLUMN" not in result.codes
 
     def test_cte_alias_is_not_treated_as_table(self, catalog: Catalog) -> None:
@@ -83,8 +77,7 @@ class TestColumnNames:
     def test_output_alias_is_referenceable(self, catalog: Catalog) -> None:
         """外层引用内层定义的别名是合法的，不能误报。"""
         result = validate_sql(
-            "SELECT bal FROM (SELECT SUM(current_balnc_cny) AS bal "
-            "FROM qa_loan_acc_detail) t",
+            "SELECT bal FROM (SELECT SUM(current_balnc_cny) AS bal FROM qa_loan_acc_detail) t",
             catalog=catalog,
             dialect=DIALECT,
         )

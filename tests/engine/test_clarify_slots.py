@@ -45,9 +45,7 @@ class TestDefaults:
         assert "未做分组" in " ".join(check.disclosures)
 
     def test_explicit_org_is_not_defaulted(self) -> None:
-        check = check_slots(
-            {"metric": "贷款余额", "time_range": "2026年4月末", "org": "渝北支行"}
-        )
+        check = check_slots({"metric": "贷款余额", "time_range": "2026年4月末", "org": "渝北支行"})
         assert "org" not in check.defaulted
         assert check.filled["org"] == "渝北支行"
 
