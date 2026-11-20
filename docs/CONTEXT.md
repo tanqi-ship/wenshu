@@ -73,12 +73,13 @@
 | **M0** | 骨架 + LLM 边界（fake/replay/real）+ 校验层 6 条规则 + 澄清槽位 + fixture + 评测集 | ✅ 完成 |
 | **M1** | 语义层（指标/维度/码值/关系）+ **编译器最小闭环** + `Scope` 权限注入 | ✅ 完成 |
 | **M1.5** | 黄金集门禁：`scripts/golden.py`（归一化/比对）+ `scripts/check_golden.py`（CLI）+ `eval/golden/cases.yaml` + pytest 接线 | ✅ 完成 |
-| **M2** | 形状扩展：双时点对比 / 每月 TopN / 多表 JOIN / 报表 UNION / 占比 / 机构名等值 | ⬜ 下一步 |
+| **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / 每月 TopN / 多表 JOIN / 报表 UNION / 占比 / 机构名等值 | 🟡 进行中（1/6） |
 | **M3** | `question → Intent`（LLM，首次引入模型）+ 澄清接线 + 只读执行 | ⬜ |
 | **M4** | 可答性门禁 + 黄金集扩到 30 条 + 评测报告 + 失败归因 | ⬜ |
 
 **现在能做什么**：给定一个结构化 `Intent`，产出**通过 6 条规则校验**的 SQL，**0 次模型调用**；
-并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，7 条用例 = 7/7，覆盖 6 种形状）。
+并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，9 条用例 = 9/9，覆盖 8 种形状）。
+能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**。
 
 **现在还不能做什么**：**给一句人话，产出 SQL。** 因为 `question → Intent` 属于 M3。
 （想现在体验端到端，只能用 `scripts/demo_ask.py` 里的**临时桩**：固定问题 → 固定 Intent。）
@@ -230,6 +231,9 @@ Python 版本已由 `uv` 解决（`uv python install 3.12`，不动系统 Python
 | 黄金 SQL 若允许"一键用引擎产出刷新" | 门禁退化成"引擎没变"的自证 | `check_golden` **不提供** `--update/--bless` |
 | `GoldenCase` 起初**没有 `scope` 字段**，`evaluate_case` 也不传 scope | 权限形状（行级策略 / fail-closed）无法进黄金集 —— 三个注入点里唯一"错了就是事故"的那个，只有单测没有端到端对照 | `app/engine/scope.py::scope_from_mapping` + `GoldenCase.scope` + `G-006/G-007`；`test_scope_is_threaded_into_compilation` 做**双向**证明（有 scope 必一致、无 scope 必不一致） |
 | 权限类配置（`row_policies`）若把"没配策略"和"策略没取值"当成一回事 | 前者是不限制，后者是"什么都看不到"；混成前者 = 越权 | 加载器保留空 `values`；`test_row_policy_without_values_is_kept_not_dropped` |
+| SQL **不允许同一层 SELECT 引用本层别名** | `cur_balance - base_balance` 在任何数据库都不合法；下意识写法 | 差值重复写两遍完整表达式（ADR-0007）；黄金集 `G-008.sql` |
+| 时点条件若套在聚合**外面**（`CASE WHEN etl_dt=? THEN SUM(x) ELSE 0 END`） | 语法合法、能跑，但 SUM 先在整张表聚合，结果只有一行，不报错不告警 | `test_point_condition_is_inside_aggregate`：每个 `SUM` 的参数必须是 `CASE`，且没有任何 `CASE` 里装着 `SUM` |
+| 两个时点却没给 `comparison` 时"按单时点处理" | 产出的 SQL 是**把两个时点的余额加在一起** —— 跑得通、数字还挺像 | `MULTI_POINT_WITHOUT_COMPARISON` 显式报错 + 单测 |
 
 **一条反直觉的结论（值得记住）**：**L4 对编译器产出几乎永远不会红。**
 不是因为规则没用，而是编译器在设计上就写不出违规形状（如 `_dimension_items` 让名称列进不了 GROUP BY）。
@@ -240,12 +244,19 @@ Python 版本已由 `uv` 解决（`uv python install 3.12`，不动系统 Python
 
 ## 十一、下一步（不要跳步）
 
-1. **M2.1**：双时点对比（`R-COMP-001`）—— 打通多时点 `TimeRange.points` + `CASE WHEN` 分批聚合 + 禁止子查询。
-   门禁已就位（`scripts/check_golden.py`），新形状照 `eval/golden/cases.yaml` 加一条即可，不必写新测试。
-2. **M2.2~2.6**：每月 TopN / 多表 JOIN / 报表 UNION / 占比 / 机构名等值。
-3. **M2 期间顺手补的两处欠账**（不阻塞，但别忘）：
+1. ~~**M2.1**：双时点对比（`R-COMP-001`）~~ ✅ **已完成**：`compiler/comparison.py`
+   + `eval/golden/G-008/G-009.sql` + `tests/engine/test_compiler_comparison.py`（17 条）
+   + `DECISIONS.md` ADR-0007。
+2. **M2.2**：每月 Top N（`R-TOPN-001`）—— 窗口函数 + 外层过滤。
+   `rules.py` 的 `monthly_topn_without_window` 已经在**检查**这个形状，
+   但编译器还不会**生成**它（和 M2.1 之前是同一个状态：校验器等在前面）。
+3. **M2.3~2.6**：多表 JOIN / 报表 UNION / 占比 / 机构名等值。
+4. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
    - `MetricDef.is_percentage`（`semantic/models.py`）目前**没有任何地方使用** → `unit="%"` 不会自动触发 `R-PCT-001`
    - `tests` job 里的 `scripts.seed_fixture` **已从 CI 移除**（它只支持 PostgreSQL，而 CI 给的是 `sqlite:///`）。
-  脚本本身仍然只支持 PostgreSQL —— 等 M4 真的要验方言时再按 profile 处理（ADR-0006 未决项）
+     脚本本身仍然只支持 PostgreSQL —— 等 M4 真的要验方言时再按 profile 处理（ADR-0006 未决项）
+   - `comparison` 的另外三个值（`yoy` / `mom` / `rate`）在 `Intent` 里是合法字段，
+     但编译器会明确报 `COMPARISON_UNSUPPORTED`。其中 `yoy` / `mom` 本质是"自动推算两个时点"，
+     做起来比 `delta` 便宜；`rate` 要先定义清楚"百分点 vs 相对变化"（见 ADR-0007 的翻案条件）
 
 **每加一种形状必须同时交**：黄金 SQL + 单测 + `covers` 标注（对应哪条业务规则编号）。

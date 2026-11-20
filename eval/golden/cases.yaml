@@ -168,3 +168,48 @@
     而且不报错、不告警、跑得还挺快。这条钉住 fail-closed：多一个恒假合取项 1 = 0，
     而不是把整个 WHERE 变成 1 = 0（后者丢掉审计痕迹：看不出查的是哪个时点）。
     注意 values 是**故意留空**的，加载器不许把它当成"没配策略"。
+
+# ---------------------------------------------------------------------------
+# M2.1：双时点对比 delta。
+# 三条硬约束都写在 cases.yaml 里而不是 prompt 里：comparison=delta、
+# 恰好两个时点、顺序为"当前、基准"。违反任一条都是编译期显式报错。
+# ---------------------------------------------------------------------------
+
+- id: G-008
+  shape: comparison_delta
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30", "2026-01-31"]
+    comparison: delta
+  golden: G-008.sql
+  eval_case: AQ-004
+  covers: [C-05]
+  why_hard: |
+    ① 两个时点必须一条 SELECT 一次筛出（WHERE etl_dt IN），不能用标量子查询
+       去查基准时点 —— 数据缺失时子查询静默返回 NULL/0，数字看着还挺像。
+    ② 差值只能重复写两遍完整表达式：同一 SELECT 里不能引用本层别名
+       cur_balance - base_balance 在任何数据库都不合法。
+    ③ 三列都要返回（当前值、基准值、差值），不能只给 delta。
+    ④ 时点顺序是"当前在前、基准在后"。反了 SQL 照样跑，只是 delta 符号全反。
+    ⚠️ ELSE 0 让缺失时点当 0 —— 数学上是分段求和，业务上**不等于**承认
+       "缺失快照就是零"。要不要拒答由 L2 门禁决定，编译器不判断。
+
+- id: G-009
+  shape: comparison_delta_nested
+  intent:
+    metric: 不良贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30", "2026-01-31"]
+    comparison: delta
+  golden: G-009.sql
+  covers: [C-05]
+  why_hard: |
+    不良余额的公式本身自带 CASE（五级分类 IN 30/40/50），所以时点条件必须注入到
+    **聚合参数内部**，产出两层嵌套 CASE。如果实现把 CASE 套在聚合外面
+    （CASE WHEN etl_dt = ... THEN SUM(...) ELSE 0 END），SQL 同样合法能跑，
+    但 SUM 会先在整张表上聚合 —— 语义全错而且只返回一行，不报错不告警。
+    另外这条钉住"什么指标能做 delta"：顶层必须是单个 SUM。不良**率**（顶层是除法）
+    会被明确拒绝。这是 M2.1 的显式边界，不是悄悄降级。

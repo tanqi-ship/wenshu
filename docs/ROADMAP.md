@@ -93,18 +93,37 @@ assert result.problems == []
 
 按"出错代价从高到低"排序，先做最容易算错的。
 
-| 小步 | 形状 | 对应规则 | 用例 |
-|---|---|---|---|
-| 2.1 | 双/三时点对比（同一 SELECT + `CASE WHEN`） | `R-COMP-001` | AQ-004 |
-| 2.2 | 每月 Top N（窗口函数 + 外层过滤） | `R-TOPN-001` | AQ-008 |
-| 2.3 | 多表 JOIN（`RelationDef` 驱动，≤2 表） | `R-TBL-001` | AQ-007 |
-| 2.4 | 报表分支（禁 JOIN，多报表 `UNION ALL`） | `R-JOIN-001` | AQ-006 |
-| 2.5 | 占比（分子 + 分母是整体） | 新增 `R-RATIO-001` | — |
-| 2.6 | 机构名等值匹配（禁 LIKE / 前缀 / 包含） | 新增 `R-ORG-001` | — |
+| 小步 | 形状 | 对应规则 | 用例 | 状态 |
+|---|---|---|---|---|
+| 2.1 | 双时点对比 `delta`（同一 SELECT + `CASE WHEN` 分段聚合） | `R-COMP-001` | AQ-004 | ✅ **完成** |
+| 2.2 | 每月 Top N（窗口函数 + 外层过滤） | `R-TOPN-001` | AQ-008 | ⬜ |
+| 2.3 | 多表 JOIN（`RelationDef` 驱动，≤2 表） | `R-TBL-001` | AQ-007 | ⬜ |
+| 2.4 | 报表分支（禁 JOIN，多报表 `UNION ALL`） | `R-JOIN-001` | AQ-006 | ⬜ |
+| 2.5 | 占比（分子 + 分母是整体） | 新增 `R-RATIO-001` | — | ⬜ |
+| 2.6 | 机构名等值匹配（禁 LIKE / 前缀 / 包含） | 新增 `R-ORG-001` | — | ⬜ |
 
 **验收**：7 种形状各有 1 条黄金集用例通过；`rules.py` 8 条规则全有单测。
 
 **预期规模**：每种形状约 30~40 行 + 1 个单测，总增约 250 行。
+
+### M2.1 落地记录（2026-11-20）
+
+| 交付 | 位置 |
+|---|---|
+| 投影构造器 | `compiler/comparison.py::build_metric_projections`（接收已解析的指标 + 已校验时点，不接收 `Intent`） |
+| 意图校验 | `compiler/comparison.py::resolve_comparison_points`（4 条显式报错，见下） |
+| 新增错误码 | `COMPARISON_UNSUPPORTED` / `COMPARISON_POINT_COUNT` / `MULTI_POINT_WITHOUT_COMPARISON`（`intent`）+ `DELTA_NOT_ADDITIVE`（`type_check`） |
+| 黄金 SQL | `eval/golden/G-008.sql`（贷款余额）/ `G-009.sql`（不良余额，两层嵌套 CASE） |
+| 单测 | `tests/engine/test_compiler_comparison.py`（17） |
+| 决策记录 | `DECISIONS.md` **ADR-0007** |
+
+**四条越界都显式报错，一条都不许静默放过**：
+`yoy`/`mom`/`rate` → `COMPARISON_UNSUPPORTED`；点数 ≠ 2 → `COMPARISON_POINT_COUNT`；
+两个时点但 `comparison` 为空 → `MULTI_POINT_WITHOUT_COMPARISON`；
+比率型指标（顶层不是 `SUM`）→ `DELTA_NOT_ADDITIVE`。
+
+最后一条最值得记：**两个时点却没说怎么比，如果放过去，产出的 SQL 是把两个时点的余额加在一起**
+—— 跑得通、不报错、数字还挺像。这类错没有任何一层会喊。
 
 ---
 

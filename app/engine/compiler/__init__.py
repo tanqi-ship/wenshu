@@ -25,14 +25,17 @@
 
 **已实现（M1）**：指标公式展开、时间条件（month_end / day / range）、
 维度分组（GROUP BY 编号列 + ``MAX(名称列)``）、业务过滤、行级权限注入。
-**未实现（M2）**：Top N、每月 Top N、多表 JOIN、报表 UNION 分支、占比、
-维度白名单类型检查。
+**已实现（M2.1）**：双时点对比 ``delta`` —— 一个 SELECT 内 ``WHERE etl_dt IN (...)``
++ 按拆分列聚合 + 差值列，禁止子查询（见 ``compiler/comparison.py``）。
+**未实现（M2）**：同比 / 环比 / 比率、Top N、每月 Top N、多表 JOIN、
+报表 UNION 分支、占比、维度白名单类型检查。
 """
 
 from __future__ import annotations
 
 from sqlglot import exp
 
+from app.engine.compiler.comparison import build_metric_projections, resolve_comparison_points
 from app.engine.compiler.conditions import build_business_conditions, build_policy_conditions
 from app.engine.compiler.errors import (
     AST_INVALID,
@@ -43,7 +46,7 @@ from app.engine.compiler.errors import (
     CompileError,
     CompileStage,
 )
-from app.engine.compiler.metrics import parse_metric_formula, qualify_columns
+from app.engine.compiler.metrics import qualify_columns
 from app.engine.compiler.time import build_time_condition, month_end_range
 from app.engine.scope import Scope
 from app.engine.semantic.catalog import SemanticCatalog
@@ -78,8 +81,13 @@ def compile_intent(
     metric = _resolve_metric(intent, catalog)
     table = _primary_table(metric, catalog, scope)
 
+    # ② check —— 多时点意图的显式校验（M2.1）。
+    #    放在造节点之前：一个"两个时点却没说怎么比"的 Intent，
+    #    必须在这里就失败，而不是产出一条"把两个时点加在一起"的 SQL。
+    #    返回的 points 是**已校验**的时点，下面直接用作投影的输入。
+    points = resolve_comparison_points(intent)
+
     # ③ build —— 造节点
-    metric_expr = parse_metric_formula(metric, alias=alias, dialect=dialect)
     conditions: list[exp.Expression] = [
         build_time_condition(
             intent.time_range,
@@ -91,6 +99,15 @@ def compile_intent(
     conditions.extend(build_business_conditions(intent, catalog, alias=alias))
     conditions.extend(build_policy_conditions(scope, alias=alias))
 
+    metric_projections = build_metric_projections(
+        metric,
+        points=points,
+        comparison=intent.comparison,
+        alias=alias,
+        snapshot_column=policy.snapshot_column,
+        dialect=dialect,
+    )
+
     dimension_items = _dimension_items(intent, catalog, alias=alias)
 
     # ④ assemble —— 填 4 个空
@@ -101,7 +118,7 @@ def compile_intent(
         if display_projection is not None:
             projections.append(display_projection)
         group_columns.append(group_column)
-    projections.append(exp.alias_(metric_expr, metric.code))
+    projections.extend(metric_projections)
 
     select = exp.Select(
         expressions=projections,

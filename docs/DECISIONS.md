@@ -337,6 +337,89 @@ CI 里跑一个 pgvector service 意味着：本地开发要装 Docker、CI 要�
 
 ---
 
+## ADR-0007：多时点对比用「单 SELECT + 分段聚合 + 重复表达式」，M2.1 只做可加总的 delta
+
+**状态**：已接受（2026-11-20，M2.1）
+**决策**：
+
+1. 双时点对比在**同一个 SELECT** 内完成：`WHERE etl_dt IN (cur, base)` +
+   `SUM(CASE WHEN etl_dt = ? THEN <聚合参数> ELSE 0 END)` 分列聚合。
+2. 差值列**重复写两遍完整表达式**，不用 CTE，也不用子查询。
+3. 时点条件注入**聚合参数内部**，不套在聚合外面。
+4. M2.1 只支持 `delta`，且只接受可加总指标（公式顶层是单个 `SUM`）；越界一律显式报错。
+
+### 背景
+
+`AQ-004` 要"2026年1月末到4月末贷款余额增加额"，输出三列 `cur_balance` /
+`base_balance` / `delta`。最自然的写法是：
+
+```sql
+SELECT SUM(CASE WHEN etl_dt='2026-04-30' THEN x ELSE 0 END) AS cur_balance,
+       SUM(CASE WHEN etl_dt='2026-01-31' THEN x ELSE 0 END) AS base_balance,
+       cur_balance - base_balance AS delta        -- ✗ 任何数据库都不合法
+FROM ...
+```
+
+**SQL 不允许同一个 SELECT 里的表达式引用本层别名**（别名是给 `ORDER BY`
+和外层查询用的）。三条出路：
+
+| 方案 | 形状 | 代价 |
+|---|---|---|
+| **(a) 重复完整表达式** | `SUM(CASE…) - SUM(CASE…)` | SQL 长约 3 倍 |
+| (b) CTE | `WITH t AS (SELECT …cur, …base) SELECT cur-base FROM t` | 要先把"CTE 算不算 R-COMP-001 说的子查询"定义清楚 |
+| (c) 子查询 | 嵌套 SELECT | 被 `R-COMP-001` 直接排除 |
+
+### 决策理由
+
+**1. 选 (a)：代价是长度，换来规则边界清晰。**
+
+可读性可以用视图/注释补；而"对比查询里藏了一个子查询"这种事，
+只有在 review 黄金 SQL 时才看得出来。`R-COMP-001` 的存在理由正是
+"不要让人去判断那条子查询算不算违规"。
+
+**2. 时点条件必须注入聚合参数内部，不是套在聚合外面。**
+
+```sql
+SUM(CASE WHEN etl_dt='…' THEN x ELSE 0 END)          -- ✓
+CASE WHEN etl_dt='…' THEN SUM(x) ELSE 0 END          -- ✗ 语法合法、语义全错
+```
+
+后者 SUM 会先在整张表上聚合，再由 CASE 决定要不要 —— **结果只有一行，不报错不告警**。
+这条由 `tests/engine/test_compiler_comparison.py::test_point_condition_is_inside_aggregate`
+用结构断言钉住（每个 `SUM` 的参数必须是 `CASE`，且没有任何 `CASE` 里装着 `SUM`）。
+
+**3. M2.1 只实现 `delta`，且只接受可加总指标（顶层是单个 `SUM`）。**
+
+分段求和再相加是恒等式，对 `SUM` 成立；对 `AVG` / `COUNT` / 比率不成立
+（分段平均再相减没有意义）。所以 `npl_ratio` 这类指标在这里明确报
+`DELTA_NOT_ADDITIVE`，而不是产出一条跑得通、口径却错的 SQL。
+
+**4. 越界一律显式报错，不静默降级。** 四个错误码：
+`COMPARISON_UNSUPPORTED`（yoy/mom/rate、或 grain=range）、
+`COMPARISON_POINT_COUNT`（点数 ≠ 2）、
+`MULTI_POINT_WITHOUT_COMPARISON`（两个时点却没说怎么比）、
+`DELTA_NOT_ADDITIVE`（指标不可加总）。
+
+### 一个已知的口径缺口（明确接受，不隐瞒）
+
+`ELSE 0` 让缺失时点按 0 参与计算。数学上这是分段求和的正确写法，
+**业务上不等于承认"缺失的快照就是零"**：`fixture` 的 D-10 就有 ETL 失败导致某月无快照的场景，
+那时 delta 会算成"当前值 - 0"，看起来是大幅增加。
+
+要不要拒答、要不要在答案里标注，属于 L2 门禁与答案披露的职责，
+**不在编译器里判断**。这一条已写进 `eval/golden/G-008.sql` 的口径提醒。
+
+### 什么情况下翻案
+
+* 需要 `yoy` / `mom` / `rate`：它们的形状不同（跨年、跨月、除法）。
+  若证明"重复表达式"在这些形状下不可维护（例如比率需要 4 份子表达式），
+  重开关于 CTE 的讨论 —— 那时也应该是**先扩展 `R-COMP-001` 的定义**，再改形状
+* 需要对比**比率/均价**类指标：要么先定义清楚"差值是百分点还是相对变化"，
+  要么改用两层结构（CTE）
+* SQL 长度成为实际维护负担（例如 4 个时点以上的对比）
+
+---
+
 ## 待决事项（尚未形成 ADR）
 
 | 议题 | 卡在哪 |

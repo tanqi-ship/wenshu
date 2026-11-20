@@ -110,9 +110,10 @@ compile(intent, semantic, scope) -> exp.Select
 ├─ ② check     类型检查（askdb 完全没有这一步）
 │     for dim in dims: assert dim.code in metric.dimensions   # → DIMENSION_NOT_ALLOWED
 │     assert metric.source_tables ⊆ scope.tables              # → METRIC_OUT_OF_SCOPE
+│     resolve_comparison_points(intent)                       # M2.1：多时点意图的 4 条显式校验
 │
 ├─ ③ build     造节点
-│     metric_expr = parse_metric_formula(metric, alias)   # 公式字符串 → AST 片段
+│     metric_projs = build_metric_projections(metric, points)  # 1 列（M1）或 3 列 delta（M2.1）
 │     time_where  = build_time_where(intent.time_range)   # 3 种时间形态
 │     dim_projs   = [Column(gb), Max(Column(display))]    # ★ 名称字段永远只做 MAX
 │     policy_where= [Condition(p) for p in scope.row_policies]
@@ -128,6 +129,11 @@ compile(intent, semantic, scope) -> exp.Select
 
 > **"填 4 个空"这件事**：SELECT 投影 / FROM / WHERE / GROUP BY。
 > 代码写死的是这 4 个空的结构，填进去的内容 100% 来自 L0 的数据。
+>
+> **③ 的投影构造器（M2.1）**：`build_metric_projections` 收的是**已解析的指标定义**与
+> **已校验的时点**，不接收 `Intent` —— "哪些形状合法"的判断留在 ② 一处（`comparison.py`），
+> 这里只负责造节点。单时点输出 1 列；双时点 `delta` 输出 `cur_balance` / `base_balance` /
+> `delta` 三列，时点条件注入到聚合**参数内部**（见 ADR-0007）。
 
 ### 错误分类（决定给谁看）
 
