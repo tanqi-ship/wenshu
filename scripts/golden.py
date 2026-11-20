@@ -42,6 +42,7 @@ from sqlglot import exp
 from sqlglot.errors import ParseError
 
 from app.engine.compiler import CompileError, compile_sql
+from app.engine.scope import Scope, scope_from_mapping
 from app.engine.semantic.catalog import SemanticCatalog
 from app.engine.semantic.models import Intent, intent_from_mapping
 from app.engine.validation import validate_sql
@@ -168,7 +169,7 @@ _CASE_ID_PATTERN = re.compile(r"^G-\d{3}$")
 #: 规则编号格式：``C-11``（业务规则）/ ``R-NAME-001``（规则码）/ ``D-07``（fixture 缺陷）
 _COVER_PATTERN = re.compile(r"^(C-\d{2}|R-[A-Z]+-\d{3}|D-\d{2})$")
 
-_CASE_KEYS = frozenset({"id", "shape", "intent", "golden", "covers", "eval_case", "why_hard"})
+_CASE_KEYS = frozenset({"id", "shape", "intent", "scope", "golden", "covers", "eval_case", "why_hard"})
 _REQUIRED_CASE_KEYS = ("id", "shape", "intent", "golden")
 
 
@@ -191,6 +192,10 @@ class GoldenCase:
     intent: Intent
     #: 手写黄金 SQL 的路径。
     sql_path: Path
+    #: 编译器的第三个输入（ADR-0004）。``None`` 表示这条用例不关心权限。
+    #: 权限相关的形状（行级策略、fail-closed）必须靠它才能被测到 ——
+    #: 这些形状的产出差异**只**来自 scope，不在 intent 里。
+    scope: Scope | None = None
     #: 覆盖的业务规则编号。
     covers: tuple[str, ...] = ()
     #: 对应的评测用例编号（可空）。
@@ -286,12 +291,20 @@ def cases_from_payload(
         except ValueError as exc:
             raise GoldenConfigError(f"{case_id} 的 intent 写错了：{exc}") from exc
 
+        scope: Scope | None = None
+        if item.get("scope") is not None:
+            try:
+                scope = scope_from_mapping(item["scope"])
+            except ValueError as exc:
+                raise GoldenConfigError(f"{case_id} 的 scope 写错了：{exc}") from exc
+
         cases.append(
             GoldenCase(
                 id=case_id,
                 shape=str(item["shape"]).strip(),
                 intent=intent,
                 sql_path=sql_path,
+                scope=scope,
                 covers=covers,
                 eval_case=str(item.get("eval_case") or "").strip(),
                 why_hard=str(item.get("why_hard") or "").strip(),
@@ -366,9 +379,13 @@ def evaluate_case(
 
     * 编译失败时不再比对（没有产出可比）
     * 校验永远跑（即使比对失败，也想知道这条 SQL 是否合规 —— 两个结论互相独立）
+
+    ``case.scope`` 同时传给编译器与校验器，这不是多余：
+    编译器的 scope 决定**注入了哪些条件**，校验器的 scope 决定**表在不在可见范围**。
+    两处用的是同一个值，但检查的是两件不同的事（ADR-0004 的第三层纵深）。
     """
     try:
-        produced = compile_sql(case.intent, semantic, dialect=dialect)
+        produced = compile_sql(case.intent, semantic, scope=case.scope, dialect=dialect)
     except CompileError as exc:
         return CaseOutcome(
             case=case,
@@ -377,7 +394,7 @@ def evaluate_case(
         )
 
     comparison = compare(case.golden_sql, produced, dialect=dialect)
-    result = validate_sql(produced, catalog=catalog, dialect=dialect)
+    result = validate_sql(produced, catalog=catalog, scope=case.scope, dialect=dialect)
     return CaseOutcome(
         case=case,
         matches=comparison.matches,

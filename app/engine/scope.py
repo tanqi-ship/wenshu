@@ -83,3 +83,100 @@ class Scope:
 
     def __bool__(self) -> bool:
         return bool(self.tables)
+
+
+# ---------------------------------------------------------------------------
+# 从配置构造（黄金集 / 评测集用）
+# ---------------------------------------------------------------------------
+
+#: 允许的键。与 :func:`app.engine.semantic.models.intent_from_mapping` 的原则一致：
+#: **未知键直接报错，绝不静默忽略**。配置里把 ``row_policies`` 手滑写成
+#: ``row_policy``，若被忽略，黄金集会"通过"——但它测的东西已经悄悄变了。
+_SCOPE_KEYS = frozenset({"tables", "columns", "row_policies"})
+_ROW_POLICY_KEYS = frozenset({"table", "column", "operator", "values"})
+_POLICY_OPERATORS = frozenset({"eq", "in"})
+
+
+def _reject_unknown_keys(payload: Mapping[str, object], allowed: frozenset[str], what: str) -> None:
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise ValueError(
+            f"{what} 里有不认识的键：{', '.join(unknown)}。允许的键：{', '.join(sorted(allowed))}。"
+        )
+
+
+def _as_mapping(value: object, what: str) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{what} 应该是一个映射，当前是 {type(value).__name__}。")
+    return value
+
+
+def _row_policy_from_mapping(raw: object) -> RowPolicy:
+    payload = _as_mapping(raw, "row_policies[]")
+    _reject_unknown_keys(payload, _ROW_POLICY_KEYS, "row_policies[]")
+
+    table = str(payload.get("table") or "").strip()
+    column = str(payload.get("column") or "").strip()
+    if not table:
+        raise ValueError("row_policies[] 缺少 table。")
+    if not column:
+        raise ValueError("row_policies[] 缺少 column。")
+
+    operator = str(payload.get("operator") or "eq").strip()
+    if operator not in _POLICY_OPERATORS:
+        raise ValueError(f"row_policies[].operator 只能是 eq / in，当前是 {operator!r}。")
+
+    values_raw = payload.get("values")
+    if values_raw is None:
+        values: tuple[str, ...] = ()
+    elif isinstance(values_raw, str) or not isinstance(values_raw, (list, tuple)):
+        raise ValueError("row_policies[].values 应该是取值列表，不是单个字符串。")
+    else:
+        values = tuple(str(value) for value in values_raw)
+
+    return RowPolicy(table=table, column=column, operator=operator, values=values)  # type: ignore[arg-type]
+
+
+def scope_from_mapping(data: Mapping[str, object]) -> Scope:
+    """从配置结构构造 :class:`Scope`（黄金集用例读它）。
+
+    结构::
+
+        scope:
+          tables: [qa_loan_acc_detail]
+          columns:                       # 可选，缺省表示"不限制列"
+            qa_loan_acc_detail: [org_no, org_nm]
+          row_policies:                  # 可选
+            - table: qa_loan_acc_detail
+              column: org_no
+              operator: in
+              values: ["B001", "B002"]
+
+    **一条没有取值的策略是合法的**（``values`` 省略）—— 它表示"这一行都看不到"，
+    编译期会变成恒假条件 ``1 = 0``。加载器不许把它当成"没配策略"而丢掉：
+    那正是 fail-closed 与静默越权之间的那条线。
+    """
+    payload = _as_mapping(data, "scope")
+    _reject_unknown_keys(payload, _SCOPE_KEYS, "scope")
+
+    tables_raw = payload.get("tables") or ()
+    if isinstance(tables_raw, str) or not isinstance(tables_raw, (list, tuple, set, frozenset)):
+        raise ValueError("scope.tables 应该是表名列表。")
+    tables = tuple(str(name).strip() for name in tables_raw if str(name).strip())
+    if not tables:
+        raise ValueError("scope.tables 不能为空：一个表都不可见时，不该有这条用例。")
+
+    columns_raw = payload.get("columns") or {}
+    columns_payload = _as_mapping(columns_raw, "scope.columns")
+    columns: dict[str, frozenset[str]] = {}
+    for table, names in columns_payload.items():
+        if isinstance(names, str) or not isinstance(names, (list, tuple, set, frozenset)):
+            raise ValueError(f"scope.columns[{table}] 应该是列名列表。")
+        columns[str(table)] = frozenset(str(name).lower() for name in names)
+
+    policies_raw = payload.get("row_policies") or ()
+    if isinstance(policies_raw, Mapping):
+        raise ValueError("scope.row_policies 应该是列表。")
+    row_policies = tuple(_row_policy_from_mapping(item) for item in policies_raw)
+
+    return Scope.of(list(tables), columns=columns or None, row_policies=row_policies)

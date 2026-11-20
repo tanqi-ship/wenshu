@@ -78,7 +78,7 @@
 | **M4** | 可答性门禁 + 黄金集扩到 30 条 + 评测报告 + 失败归因 | ⬜ |
 
 **现在能做什么**：给定一个结构化 `Intent`，产出**通过 6 条规则校验**的 SQL，**0 次模型调用**；
-并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，2 条用例 = 2/2）。
+并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，7 条用例 = 7/7，覆盖 6 种形状）。
 
 **现在还不能做什么**：**给一句人话，产出 SQL。** 因为 `question → Intent` 属于 M3。
 （想现在体验端到端，只能用 `scripts/demo_ask.py` 里的**临时桩**：固定问题 → 固定 Intent。）
@@ -153,7 +153,7 @@ ruff check app scripts tests
 |---|---|---|
 | 单测 | `tests/engine/test_compiler_minimal.py`（14）、`test_business_filters.py`（6） | 规则对不对 |
 | 归一化 | `tests/engine/test_golden_compare.py`（21） | 比对器"该忽略什么、不该忽略什么" |
-| 黄金集门禁 | `tests/engine/test_golden_gate.py`（19） | 算得对不对 + **门禁自己会不会红** |
+| 黄金集门禁 | `tests/engine/test_golden_gate.py`（35） | 算得对不对 + **门禁自己会不会红** |
 
 另外 `scripts/trace_compile.py` 是学习工具：把编译器五步的中间产物逐个打出来
 （`uv run python -m scripts.trace_compile --trap` 还能现场演示 `from/from_` 那个坑）。
@@ -173,7 +173,7 @@ ruff check app scripts tests
 
 ```bash
 uv sync --group dev      # 建/更新 venv
-uv run pytest            # 179 passed（纯内存，不需要数据库/模型/网络）
+uv run pytest            # 213 passed（纯内存，不需要数据库/模型/网络）
 uv run ruff check .      # All checks passed
 uv run ruff format --check .
 uv run python -m scripts.demo_ask       # 端到端演示（见下）
@@ -228,6 +228,8 @@ Python 版本已由 `uv` 解决（`uv python install 3.12`，不动系统 Python
 | `conditions.py` 先拿**整个列表**去查码值表，`operator="in"` 分支成了死代码；且那条分支用 `code(...) or str(value)` 静默透传 | 配了码值表时多机构过滤永远报 `UNKNOWN_CODE`；没配时查不到却不报错 | `_stored_value()` 统一 fail-closed + `tests/engine/test_business_filters.py`（M1.5 期间才发现，`filters` 此前**零测试**） |
 | `intent_from_mapping` 之类配置加载器若静默忽略未知键 | YAML 里 `dimension` 手滑写成 `dimensinos`，门禁照样"通过"，但测的东西变了 | 加载器一律 `_reject_unknown_keys`；`test_intent_loading.py` 12 个手滑反例 |
 | 黄金 SQL 若允许"一键用引擎产出刷新" | 门禁退化成"引擎没变"的自证 | `check_golden` **不提供** `--update/--bless` |
+| `GoldenCase` 起初**没有 `scope` 字段**，`evaluate_case` 也不传 scope | 权限形状（行级策略 / fail-closed）无法进黄金集 —— 三个注入点里唯一"错了就是事故"的那个，只有单测没有端到端对照 | `app/engine/scope.py::scope_from_mapping` + `GoldenCase.scope` + `G-006/G-007`；`test_scope_is_threaded_into_compilation` 做**双向**证明（有 scope 必一致、无 scope 必不一致） |
+| 权限类配置（`row_policies`）若把"没配策略"和"策略没取值"当成一回事 | 前者是不限制，后者是"什么都看不到"；混成前者 = 越权 | 加载器保留空 `values`；`test_row_policy_without_values_is_kept_not_dropped` |
 
 **一条反直觉的结论（值得记住）**：**L4 对编译器产出几乎永远不会红。**
 不是因为规则没用，而是编译器在设计上就写不出违规形状（如 `_dimension_items` 让名称列进不了 GROUP BY）。
@@ -243,6 +245,7 @@ Python 版本已由 `uv` 解决（`uv python install 3.12`，不动系统 Python
 2. **M2.2~2.6**：每月 TopN / 多表 JOIN / 报表 UNION / 占比 / 机构名等值。
 3. **M2 期间顺手补的两处欠账**（不阻塞，但别忘）：
    - `MetricDef.is_percentage`（`semantic/models.py`）目前**没有任何地方使用** → `unit="%"` 不会自动触发 `R-PCT-001`
-   - `tests` job 里的 `scripts.seed_fixture` 仍然只支持 PostgreSQL，而 CI 给它的是 `sqlite:///` → 该 job 必然失败（ADR-0006 未决项）
+   - `tests` job 里的 `scripts.seed_fixture` **已从 CI 移除**（它只支持 PostgreSQL，而 CI 给的是 `sqlite:///`）。
+  脚本本身仍然只支持 PostgreSQL —— 等 M4 真的要验方言时再按 profile 处理（ADR-0006 未决项）
 
 **每加一种形状必须同时交**：黄金 SQL + 单测 + `covers` 标注（对应哪条业务规则编号）。

@@ -70,8 +70,10 @@ assert result.problems == []
 | 归一化 + 比对 | `scripts/golden.py::canonical_sql / compare` | 解析 → 去注释 → 未加引号标识符小写 → 单行渲染；出 unified diff |
 | 用例加载 | `scripts/golden.py::load_cases / cases_from_payload` | 缺字段 / 未知键 / id 重复 / 孤儿 `.sql` / `covers` 格式 → 全部 fail-closed |
 | 门禁 CLI | `scripts/check_golden.py` | `--golden/--cases/--output`（照 `ci.yml` 已有契约）；退出码 0/1/2 |
-| 用例数据 | `eval/golden/cases.yaml` + `G-001.sql` + `G-002.sql` | 黄金 SQL **手写**，与编译器形状对齐（别名 `t1`、字符串日期） |
-| pytest 接线 | `tests/engine/test_golden_gate.py`（19） | 参数化跑门禁 + 元数据纪律 + **门禁自己会不会红** |
+| 用例数据 | `eval/golden/cases.yaml` + `G-001`~`G-007.sql` | 黄金 SQL **手写**，与编译器形状对齐（别名 `t1`、字符串日期） |
+| 形状覆盖 | `month_end_single_point` / `dimension_grouping` / `business_filter_eq` / `range_between` / `row_policy_injection` / `row_policy_fail_closed` | 起初只钉了单时点；**补票**后覆盖编译器已实现的 6 类形状（共 7 条用例） |
+| pytest 接线 | `tests/engine/test_golden_gate.py`（35） | 参数化跑门禁 + 元数据纪律 + **门禁自己会不会红** |
+| 权限形状 | `eval/golden/G-006.sql` + `G-007.sql` | 编译器的第三个输入 `Scope` 首次进黄金集；含 fail-closed（`1 = 0`） |
 | 比对器单测 | `tests/engine/test_golden_compare.py`（21） | 该忽略什么（排版/大小写/注释）与**不该忽略什么**（字面量大小写/IN 顺序/缺 FROM） |
 
 **三条刻意的设计**：

@@ -8,7 +8,7 @@
 > **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** 完成 ——
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 / 行级权限），
 > 并且有一条命令能回答"引擎现在算得对不对"：
-> `uv run python -m scripts.check_golden`（2 条手写黄金用例，2/2 通过）。**179 个测试全过。**
+> `uv run python -m scripts.check_golden`（7 条手写黄金用例，7/7 通过，覆盖 6 种形状）。**213 个测试全过。**
 > **尚未实现**：Top N、每月 Top N、多表 JOIN、报表 UNION 分支（M2）；
 > `question → Intent` 抽取（M3）；可答性门禁与黄金集扩到 30 条（M4）。见 `docs/ROADMAP.md`。
 
@@ -111,7 +111,7 @@ askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写�
 
 ```bash
 uv sync --group dev
-uv run pytest                                # 179 passed，不需要数据库 / 模型 / 网络
+uv run pytest                                # 213 passed，不需要数据库 / 模型 / 网络
 uv run ruff check .                          # All checks passed
 uv run python -m scripts.demo_ask            # 端到端演示：问题 → Intent → SQL → 校验
 uv run python -m scripts.check_golden        # 黄金集门禁：引擎产出 vs 手写黄金 SQL

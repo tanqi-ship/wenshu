@@ -56,3 +56,115 @@
     靠 compiler/metrics.py::qualify_columns 补表别名。
     所以它钉住的是"补别名"这件事：少一个 t1. 前缀也算不一致。
     同时它是唯一有评测用例对照的一条（AQ-001），用来验证交叉检查真的在工作。
+
+# ---------------------------------------------------------------------------
+# 以下三条是 M1.5 之后的"补票"：编译器已经会这几种形状，但此前只有单测、
+# 没有黄金 SQL 钉住。补票的顺序是"先钉住已有的，再扩新的"——
+# 否则 M2 每加一种形状，都是在没有对照物的地基上加。
+# ---------------------------------------------------------------------------
+
+- id: G-003
+  shape: dimension_grouping
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [机构]
+  golden: G-003.sql
+  eval_case: AQ-005
+  covers: [R-NAME-001, C-11, D-01]
+  why_hard: |
+    维度分组最容易出的错是"名称列跟着进了 GROUP BY"——语句能跑、
+    结果看起来也合理，只是同一个机构被拆成好几行（名字有空格差异、简称差异）。
+    这条钉的是形状：GROUP BY 只有 org_no，org_nm 只以 MAX(...) 出现。
+    第②个坑是口径：机构默认走财务口径 org_no，而不是 accounting_org_no。
+    fixture 里两者 99% 相同、5% 不同（D-01），选错了大部分机构看不出来。
+
+- id: G-004
+  shape: business_filter_eq
+  intent:
+    metric: 不良贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    filters:
+      - dimension: 机构
+        value: 渝北支行
+  golden: G-004.sql
+  eval_case: AQ-002
+  covers: [D-01, D-06]
+  why_hard: |
+    Intent 里是业务语言「渝北支行」，SQL 里必须是存储值 'B001'（code_map 翻译）。
+    这是全仓最阴的一类错：如果翻译没发生，SQL 是 org_no = '渝北支行'，
+    语法合法、L4 六条规则全绿、能跑出结果——只是结果恒为 0 行。
+    **没有任何一层会报错**，只有黄金集能发现。
+    反过来同样错：把它写成 LIKE '%渝北%' / 前缀匹配会把下级机构卷进来（D-06）。
+
+- id: G-005
+  shape: range_between
+  intent:
+    metric: 贷款余额
+    time:
+      grain: range
+      start: "2026-01-31"
+      end: "2026-06-30"
+  golden: G-005.sql
+  eval_case: AQ-009
+  covers: [D-10]
+  why_hard: |
+    ① 区间边界必须是**月末快照日期**（2026-01-31，不是 2026-01-01）——
+       但那个推算是 L1/L2 的活，编译器只把给它的两个日期原样变成闭区间。
+    ② 必须是闭区间 BETWEEN。写成 >= 起 AND < 止 会漏掉 6 月末那个快照，
+       少一个月，数字只差一点，看不出来。
+    ③ 口径提醒：余额是时点存量，对 6 个月末快照求和没有业务意义。
+       这条用例钉的是**形状**，不是认可这个口径。区间形态真正适用的是
+       流量类指标（核销金额/回收金额），那属于 M2 后续用例。
+
+# ---------------------------------------------------------------------------
+# 以下两条是**权限形状**：编译器的三个输入里，Intent 完全相同，
+# 差异全部来自 scope（ADR-0004）。这是黄金集里唯一能端到端钉住权限的地方 ——
+# 在此之前权限只有单测，没有"从 Intent + Scope 到 SQL 文本"的对照。
+# ---------------------------------------------------------------------------
+
+- id: G-006
+  shape: row_policy_injection
+  intent:
+    metric: 不良贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+  scope:
+    tables: [qa_loan_acc_detail]
+    row_policies:
+      - table: qa_loan_acc_detail
+        column: org_no
+        operator: in
+        values: ["B001", "B002"]
+  golden: G-006.sql
+  covers: [C-05]
+  why_hard: |
+    同样的 Intent，换个身份就该换条 SQL —— 差异不在 Intent 里，在 scope 里。
+    两个坑：① 权限条件必须是 AND 上去的，不能覆盖时间条件（否则跨月累加）；
+    ② 合成顺序固定为 时间 → 业务 → 权限，顺序本身是被钉住的契约，
+    因为下游"改条件重跑"要靠"最后一段是权限"来保证它不被改动。
+
+- id: G-007
+  shape: row_policy_fail_closed
+  intent:
+    metric: 不良贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+  scope:
+    tables: [qa_loan_acc_detail]
+    row_policies:
+      - table: qa_loan_acc_detail
+        column: org_no
+  golden: G-007.sql
+  covers: [C-05]
+  why_hard: |
+    策略配了、取值没了（权限数据没同步）——此时"静默跳过策略"会让人看到全行数据，
+    而且不报错、不告警、跑得还挺快。这条钉住 fail-closed：多一个恒假合取项 1 = 0，
+    而不是把整个 WHERE 变成 1 = 0（后者丢掉审计痕迹：看不出查的是哪个时点）。
+    注意 values 是**故意留空**的，加载器不许把它当成"没配策略"。

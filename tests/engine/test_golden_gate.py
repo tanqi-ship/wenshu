@@ -235,3 +235,42 @@ def test_orphan_golden_sql_raises(tmp_path: Path) -> None:
 
     with pytest.raises(GoldenConfigError, match="没有登记这些黄金 SQL"):
         cases_from_payload(_payload(), directory=tmp_path, source="test")
+
+
+def test_scope_is_threaded_into_compilation(tmp_path: Path) -> None:
+    """``case.scope`` 必须真的传进编译器，否则权限形状的门禁是假的。
+
+    这是"双向证明"，只断言一侧没有意义：
+
+    * 有 scope   → 产出带 ``AND t1.org_no IN (...)`` → 与黄金 SQL 一致
+    * 无 scope   → 产出不带权限条件           → 与黄金 SQL 不一致
+
+    如果没有第二个断言，那么"把 scope 写在 dataclass 里却忘了传下去"
+    这个 bug 会完全静默 —— 因为门禁只会看到"我传了 scope，它通过了"。
+    这条与 ``test_scope_loading.py`` 里"没有取值的策略不许被丢掉"是同一个主题：
+    权限的错不会自己喊，只能靠对照钉住。
+    """
+    (tmp_path / "G-900.sql").write_text(
+        """
+        SELECT SUM(t1.current_balnc_cny) AS loan_balance
+        FROM qa_loan_acc_detail AS t1
+        WHERE t1.etl_dt = '2026-04-30' AND t1.org_no IN ('B001', 'B002')
+        """,
+        encoding="utf-8",
+    )
+    scope_config = {
+        "tables": [TABLE],
+        "row_policies": [{"table": TABLE, "column": "org_no", "operator": "in", "values": ["B001", "B002"]}],
+    }
+
+    with_scope = cases_from_payload(_payload(scope=scope_config), directory=tmp_path, source="test")[0]
+    without_scope = cases_from_payload(_payload(), directory=tmp_path, source="test")[0]
+
+    assert with_scope.scope is not None, "scope 没有被加载进来"
+    assert without_scope.scope is None
+
+    matched = evaluate_case(with_scope, semantic_catalog(), validation_catalog())
+    assert matched.matches, matched.comparison.render() if matched.comparison else ""
+
+    unmatched = evaluate_case(without_scope, semantic_catalog(), validation_catalog())
+    assert not unmatched.matches, "没有传 scope 却仍然对上了，说明 scope 根本没进编译器"
