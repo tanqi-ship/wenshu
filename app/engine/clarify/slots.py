@@ -9,7 +9,11 @@ LLM 在信息不全时的默认行为是"补一个合理值然后继续"，而�
 所以判据不能是"模型觉得够了"，必须是**槽位清单 + 确定性的齐全性检查**。
 模型只负责抽取槽位；"够不够"由代码判定。
 
-三个设计决定：
+本模块保留早期映射/预算接口供兼容。M3.2 的新入口在 preparation.py：
+只检查指标/时间两个显式必需槽位，不使用本模块的默认值或预算耗尽回退，
+不将 complete 当作可答性/可编译性证明。
+
+早期接口的三个设计决定（不是 M3.2 的处理策略）：
 
 1. **默认值优先，追问兜底。** 有合理默认的槽位（机构=全行）不追问，
    而是带默认作答并在答案里标注口径。
@@ -44,7 +48,7 @@ class SlotSpec:
     required: bool = False
 
 
-#: 意图槽位清单。**这是"够不够"的唯一判据。**
+#: 旧映射接口的默认槽位清单；新准备层显式传入专用规格。
 #:
 #: 注意 ``org`` 和 ``dimensions`` 用的是 ``use_default``：银行问数里
 #: "没提机构"绝大多数情况就是"全行"，追问一次会让追问率翻倍。
@@ -114,7 +118,7 @@ class SlotCheck:
 
     @property
     def complete(self) -> bool:
-        """所有必需信息是否齐全 —— 这就是"能不能生成 SQL"的判据。"""
+        """已配置的必需槽位是否不缺失；不证明可答、可编译或有权限。"""
         return not self.missing
 
     @property
@@ -214,8 +218,8 @@ class ClarifyState:
     def should_ask(self, check: SlotCheck) -> bool:
         """是否还应该追问。
 
-        预算用尽后不再问 —— 此时应该按默认值作答并标注不确定项，
-        或者直接拒答。**绝不能无限追问。**
+        旧接口预算用尽后不再问，但这不授权补全必需信息或执行查询。
+        M3.2 不使用本状态；后续会话须单独设计预算耗尽后的拒绝边界。
         """
         if not check.missing:
             return False
@@ -229,8 +233,8 @@ class ClarifyState:
 def build_answer_note(check: SlotCheck, state: ClarifyState | None = None) -> str:
     """生成答案里的口径说明。
 
-    追问预算耗尽时，要额外说明"哪些信息是按默认值处理的" ——
-    这比悄悄用一个默认值好得多：用户能看见假设，才能判断数字能不能用。
+    为兼容保留旧的默认口径/预算耗尽文案，不表示允许猜测必需信息。
+    M3.2 不调用此函数，也不将它的说明当成可继续查询的凭据。
     """
     notes = check.disclosures
     if state is not None and state.exhausted and check.missing:

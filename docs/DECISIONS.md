@@ -706,6 +706,58 @@ record_cassette 仅为将来显式 real 手动录制接线；finally flush 保�
 
 ---
 
+## ADR-0014：澄清采用无状态单轮接线，槽位齐全不等于可答或授权
+
+**状态**：已接受并实现（2026-11-23，M3.2；用户批准书面规格）。
+
+### 决策与替代方案
+
+新增 `clarify/preparation.py` 与 `prepare_question(question, catalog, *, llm)`。
+只复用一次 M3.1 extract_intent，再将 Intent.metric/time_range 显式传给既有 check_slots 的两项专用 SlotSpec。
+不直接复用早期 INTENT_SLOTS 的全行/对比默认说明、相对时间示例，也不提前建设完整会话与执行流水线。
+
+返回冻结的 PreparationResult(status, extraction, missing_slots, clarification) 与 Clarification，
+新增集合字段为 tuple；成功抽取保留原 ExtractionResult、Intent、raw 与 Completion，不补默认或修改业务值。
+缺指标/时间按 metric → time_range 一次只问一个；示例取目录键稳定排序的至多三个指标业务名，
+时间示例只有固定绝对日期/范围，不读时钟、不承诺用户补答一定可编译。
+
+### 两种状态与严格错误边界
+
+- needs_clarification：缺槽位时保留原抽取结果，并返回完整缺失名称元组及首项追问。
+- slots_complete：仅表示必需槽位不缺；未知名称、受限形状、Scope 权限和数据存在性仍须后续检查。
+- EXTRACTION_UNRESOLVED：原片段契约有效时只引用第一片段、不猜类型，保留所有片段，slot=None。
+- EXTRACTION_MULTI_METRIC_UNSUPPORTED：请求指定一个指标，不自动取首项或重新解析错误响应。
+
+后两种分支 extraction=None，missing_slots=() 仅表示未运行检查，不伪造部分 Intent/Completion/token统计。
+追问保留原错误代码及定位；非目标 ExtractionError（包括未来新代码）、模型/ReplayMiss 原对象透传。
+不把 JSON/schema/日期错误伪装成用户未说清；旧错误优先级与 0/1 次调用预算保持，无第二次分类、修复或追问生成调用。
+
+准备层不接收 Scope，不导入 compiler/validation/coverage/factory/配置或执行层，不读环境。
+旧映射/预算接口行为不改，只修正文档中的过度保证；新路径不使用默认值/说明或 ClarifyState。
+预算耗尽不能成为猜测必需信息的许可，跨请求补答合并、轮次和拒绝边界留待 M3.3 独立设计。
+
+### 离线交付与验收
+
+新增20条独立手写准备层预期，引用原问题与固定 cassette；不刷新旧消息键/响应/预期。
+新增 demo_prepare，始终 ReplayLLM(inner=None, strict=True)，real 环境也不构造真实客户端；
+槽位齐全和澄清都正常退出0，技术错误非零。旧 demo_extract 对多指标/unresolved 仍退出1，其余旧脚本不改。
+
+新增95项测试：核心37、回放/集成29、CLI29；全量1314、黄金26/26、10条评测纪律、8条业务规则保持。
+集成测试验证未知指标/维度/机构、yoy/mom/rate、全局TopN与空Scope仍被旧L3拒绝，
+有效样本与外部行权限仍通过独立L4，业务过滤不会被全行默认覆盖。
+旧M3.1提示词/协议/20份cassette、G-001～G-026 SQL和AQ原文件不改。
+新旧演示、Ruff、变更格式和diff检查通过；无真实模型、联网或外部数据库调用。
+
+只标M3.2完成，M3为2/4；M3.3状态、M3.4执行、M4可答性和真实模型评测仍未交付。
+M3.1 prompt ≤300字目标未达的披露保持，不把离线手写样本当成真实准确率/成本/延迟。
+
+### 翻案条件
+
+需要跨请求补答、真实候选歧义消解、结构化未解决片段分类或执行流水线时，
+先设计状态/证据/预算与失败边界，再扩接口；不靠关键词猜分类、置信度或默认值假装补齐。
+
+---
+
 ## 待决事项（尚未形成 ADR）
 
 | 议题 | 卡在哪 |

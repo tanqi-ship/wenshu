@@ -1,0 +1,211 @@
+# M3.2 独立手写预期。只引用旧抽取问题/cassette，不刷新响应或消息键。
+# source 模型仍为 synthetic/handwritten-fixture，不代表真实模型验收。
+cases:
+  - id: EX-001
+    extraction_case: EX-001
+    provenance: handwritten_fixture
+    why_hard: 全行不引入机构默认值，槽位齐全不代表授权
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-002
+    extraction_case: EX-002
+    provenance: handwritten_fixture
+    why_hard: 具体机构过滤不能被默认全行覆盖
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-003
+    extraction_case: EX-003
+    provenance: handwritten_fixture
+    why_hard: 保留多维分组，不追问可选槽位
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-004
+    extraction_case: EX-004
+    provenance: handwritten_fixture
+    why_hard: 不用比较默认说明覆盖delta
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-005
+    extraction_case: EX-005
+    provenance: handwritten_fixture
+    why_hard: 每月TopN保持粒度，不修改排名
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-006
+    extraction_case: EX-006
+    provenance: handwritten_fixture
+    why_hard: 明确报表来源保持原样
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-007
+    extraction_case: EX-007
+    provenance: handwritten_fixture
+    why_hard: 保留整体占比而非变化比率
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-008
+    extraction_case: EX-008
+    provenance: handwritten_fixture
+    why_hard: 缺时间只问时间，不补当前日期
+    expected_status: needs_clarification
+    expected_has_extraction: true
+    expected_missing_slots: [time_range]
+    expected_clarification:
+      reason: missing_slot
+      question: 请补充有明确年份的统计日期、月末时点或起止范围。例如：2026年4月末、2026年4月1日至2026年4月30日。
+      slot: time_range
+      fragments: []
+      source_error_code: null
+      source_error_path: null
+  - id: EX-009
+    extraction_case: EX-009
+    provenance: handwritten_fixture
+    why_hard: 未知指标槽位齐全，但后续仍UNKNOWN_METRIC
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-010
+    extraction_case: EX-010
+    provenance: handwritten_fixture
+    why_hard: 多指标转换为指定一个指标的请求，不暴露部分Intent
+    expected_status: needs_clarification
+    expected_has_extraction: false
+    expected_missing_slots: []
+    expected_clarification:
+      reason: multi_metric
+      question: 当前仅支持单指标，请指定本次要查询的一个指标。
+      slot: metric
+      fragments: []
+      source_error_code: EXTRACTION_MULTI_METRIC_UNSUPPORTED
+      source_error_path: metrics
+  - id: EX-011
+    extraction_case: EX-011
+    provenance: handwritten_fixture
+    why_hard: 相对时间不由接线层分类为时间槽位
+    expected_status: needs_clarification
+    expected_has_extraction: false
+    expected_missing_slots: []
+    expected_clarification:
+      reason: unresolved
+      question: 请明确「去年4月末」的具体含义，并补充完整问题后重新提交。
+      slot: null
+      fragments: [去年4月末]
+      source_error_code: EXTRACTION_UNRESOLVED
+      source_error_path: unresolved
+  - id: EX-012
+    extraction_case: EX-012
+    provenance: handwritten_fixture
+    why_hard: 缺年份片段不由接线层补全年份
+    expected_status: needs_clarification
+    expected_has_extraction: false
+    expected_missing_slots: []
+    expected_clarification:
+      reason: unresolved
+      question: 请明确「4月末」的具体含义，并补充完整问题后重新提交。
+      slot: null
+      fragments: [4月末]
+      source_error_code: EXTRACTION_UNRESOLVED
+      source_error_path: unresolved
+  - id: EX-013
+    extraction_case: EX-013
+    provenance: handwritten_fixture
+    why_hard: 不把半年余额猜成六月末
+    expected_status: needs_clarification
+    expected_has_extraction: false
+    expected_missing_slots: []
+    expected_clarification:
+      reason: unresolved
+      question: 请明确「2026年上半年」的具体含义，并补充完整问题后重新提交。
+      slot: null
+      fragments: [2026年上半年]
+      source_error_code: EXTRACTION_UNRESOLVED
+      source_error_path: unresolved
+  - id: EX-014
+    extraction_case: EX-014
+    provenance: handwritten_fixture
+    why_hard: 月份不默认为月末时点
+    expected_status: needs_clarification
+    expected_has_extraction: false
+    expected_missing_slots: []
+    expected_clarification:
+      reason: unresolved
+      question: 请明确「2026年4月」的具体含义，并补充完整问题后重新提交。
+      slot: null
+      fragments: [2026年4月]
+      source_error_code: EXTRACTION_UNRESOLVED
+      source_error_path: unresolved
+  - id: EX-015
+    extraction_case: EX-015
+    provenance: handwritten_fixture
+    why_hard: 非默认口径不分类猜测、不写回默认
+    expected_status: needs_clarification
+    expected_has_extraction: false
+    expected_missing_slots: []
+    expected_clarification:
+      reason: unresolved
+      question: 请明确「管户口径」的具体含义，并补充完整问题后重新提交。
+      slot: null
+      fragments: [管户口径]
+      source_error_code: EXTRACTION_UNRESOLVED
+      source_error_path: unresolved
+  - id: EX-016
+    extraction_case: EX-016
+    provenance: handwritten_fixture
+    why_hard: 未知机构保留过滤，后续仍UNKNOWN_CODE
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-017
+    extraction_case: EX-017
+    provenance: handwritten_fixture
+    why_hard: 未知维度保留，后续仍UNKNOWN_DIMENSION
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-018
+    extraction_case: EX-018
+    provenance: handwritten_fixture
+    why_hard: 缺指标只问指标，示例来自现有目录
+    expected_status: needs_clarification
+    expected_has_extraction: true
+    expected_missing_slots: [metric]
+    expected_clarification:
+      reason: missing_slot
+      question: 您想查询哪个指标？例如：贷款余额、不良贷款余额、不良贷款率。
+      slot: metric
+      fragments: []
+      source_error_code: null
+      source_error_path: null
+  - id: EX-019
+    extraction_case: EX-019
+    provenance: handwritten_fixture
+    why_hard: 全局TopN只表示槽位齐全，不增加编译能力
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null
+  - id: EX-020
+    extraction_case: EX-020
+    provenance: handwritten_fixture
+    why_hard: 不因报表配置自动改变plain
+    expected_status: slots_complete
+    expected_has_extraction: true
+    expected_missing_slots: []
+    expected_clarification: null

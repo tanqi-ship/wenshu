@@ -5,12 +5,12 @@
 > **定位**：这是**学习与工程实践**项目，不是产品。
 > 目标是把「问数引擎为什么会不准」这件事拆到底，并给出可验证的答案。
 >
-> **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** / **M2.1 双时点对比** / **M2.2 每月 Top N** / **M2.3 受限双表 JOIN** / **M2.4 报表 UNION ALL** / **M2.5 整体占比** / **M2.6 机构精确匹配** 完成（M2：6/6）；**M3.1 单轮意图抽取**完成（M3：1/4） ——
+> **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** / **M2.1 双时点对比** / **M2.2 每月 Top N** / **M2.3 受限双表 JOIN** / **M2.4 报表 UNION ALL** / **M2.5 整体占比** / **M2.6 机构精确匹配** 完成（M2：6/6）；**M3.1 单轮意图抽取** / **M3.2 单轮澄清接线**完成（M3：2/4） ——
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 /
 > 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL** / **同口径整体占比**），并且有一条命令能回答"引擎现在算得对不对"：
-> `uv run python -m scripts.check_golden`（26 条手写黄金用例，26/26 通过，覆盖 25 种形状标签）。**1219 个测试全过。**
+> `uv run python -m scripts.check_golden`（26 条手写黄金用例，26/26 通过，覆盖 25 种形状标签）。**1314 个测试全过。**
 > **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；
-> 澄清接线、跨请求追问、只读执行（M3.2～3.4）；可答性门禁与黄金集扩到 30 条（M4）。见 `docs/ROADMAP.md`。
+> 跨请求追问、只读执行（M3.3～3.4）；可答性门禁与黄金集扩到 30 条（M4）。见 `docs/ROADMAP.md`。
 
 ---
 
@@ -88,7 +88,12 @@
 缺失/未知不补全，多指标或未解决片段明确报错；不声明可答、不编译或执行 SQL。
 本轮通过 FakeLLM 和 20 条手写固定回放验证契约，未调用真实模型；不代表真实模型准确率、成本或延迟已验收。
 静态提示词 1093 字符，样本完整消息 1541～1558 字符，**未达到 ≤300 字的精简目标**，这些数不是 tokens。
-**下一步：M3.2 澄清接线**；跨请求状态、L5 执行与 M4 可答性门禁仍未完成。
+**M3.2 澄清边界**：`prepare_question(question, catalog, *, llm)` 在同一次抽取后，用显式指标/时间槽位检查返回
+`needs_clarification` 或 `slots_complete`。缺信息只问一个，多指标要求指定一个；unresolved 只引用首片段，
+不猜分类、保留全部片段。技术错误原样传播，不二次调用模型、不写回默认值。
+`slots_complete` **只说明必需槽位不缺**，不等于可答、可编译、有权限或有数据；仍需下游 L3/L4。
+20 条旧固定回放未改，新增独立准备层预期；澄清是新演示的正常结果，退出码为 0。
+**下一步：M3.3 跨请求追问状态**；目前不接收并合并上一轮补答，L5 执行与 M4 可答性门禁仍未完成。
 
 
 ---
@@ -130,10 +135,12 @@ askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写�
 
 ```bash
 uv sync --group dev
-uv run pytest                                # 1219 passed，不需要外部数据库 / 模型 / 网络
+uv run pytest                                # 1314 passed，不需要外部数据库 / 模型 / 网络
 uv run ruff check .                          # All checks passed
 uv run python -m scripts.demo_ask            # 固定问题桩：问题 → Intent → SQL → 校验
 uv run python -m scripts.demo_extract --case EX-001  # 离线抽取：严格回放 → Intent，不执行 SQL
+uv run python -m scripts.demo_prepare --case EX-008  # 离线准备：缺时间时只问时间，正常退出 0
+uv run python -m scripts.demo_prepare --case EX-010  # 多指标请求指定一个，正常退出 0
 uv run python -m scripts.check_golden        # 黄金集门禁：引擎产出 vs 手写黄金 SQL
 uv run python -m scripts.trace_compile       # 学习工具：把编译器五步逐个打出来
 ```
@@ -172,7 +179,7 @@ wenshu/
 │   │   ├── compiler/       # L3 编译器（0 次模型）：__init__ 装配 / time / metrics / conditions / comparison / topn / sources / permissions / reports / report_time / share
 │   │   ├── validation/     # L4 校验层（只读 / 名字 / 范围 / 8 条业务规则，含独立占比/机构规则）
 │   │   ├── understanding/  # M3.1 严格单轮抽取 + 最小业务上下文
-│   │   ├── clarify/        # L1/L2 意图清洗 + 确定性槽位检查
+│   │   ├── clarify/        # M3.2 无状态单轮准备 + 确定性槽位检查（保留旧预算接口）
 │   │   ├── retrieval/      # L2 检索式定范围：按业务词找候选表/列/指标（M3）
 │   │   └── coverage/       # L2 可答性门禁：COMPILE / CLARIFY / REFUSE（M4）
 │   ├── llm/                # 模型访问边界：Protocol + fake / replay / real

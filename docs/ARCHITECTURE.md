@@ -11,8 +11,8 @@
 | 层 | 模块 | 输入 | 输出 | 是否调模型 | 失败方式 |
 |---|---|---|---|---|---|
 | **L0** 输入边界 | `engine/semantic`, `Scope` | 配置数据 | `SemanticCatalog`, `Scope` | ❌ | 配置错误（启动时/加载时暴露） |
-| **L1** 理解 | `engine/understanding/` + `llm.protocol` | `question` + 业务目录 | `ExtractionResult(Intent, Completion)` | ✅ **1 次** | `ExtractionError` / 原模型异常；澄清接线待 M3.2 |
-| **L2** 门禁 | `engine/clarify/slots.py`, `engine/coverage/` | `Intent` + 语义层 + `Scope` | 编译 / 澄清 / 拒答 | ❌ | 槽位落不了地 → 澄清或拒答 |
+| **L1** 理解 | `engine/understanding/` + `llm.protocol` | `question` + 业务目录 | `ExtractionResult(Intent, Completion)` | ✅ **1 次** | `ExtractionError` / 原模型异常；单轮准备层仅选择性转澄清 |
+| **L2** 门禁 | `clarify/preparation.py` + `slots.py`（已接线）；`coverage/`（待 M4） | 已验证抽取结果 + 业务目录；M4 再接语义存在性/权限决策 | 当前仅必需槽位齐全 / 单个澄清 | ❌（判断不额外调用模型） | 技术错误透传，不将槽位齐全当作授权或可答 |
 | **L3** 编译 | `engine/compiler/` | `Intent` + 语义层 + `Scope` | `exp.Query`（Select / Union）→ SQL | ❌ | `CompileError`（**确定性失败**） |
 | **L4** 校验 | `engine/validation/` | SQL 文本 | `Problem[]` | ❌ | `Problem` 列表非空 |
 | **L5** 执行 | （待实现，M3.4） | SQL | `rows` | ❌ | 驱动异常 / 超时 |
@@ -124,7 +124,33 @@ Intent.raw 只诊断，confidence 不作判断；格式正确不证明语义正�
 有效样本仅在集成测试串 L3/L4；录制脚本需显式 real，坏响应 finally flush 且失败非零，来源另标 recorded_real。
 静态 system 1093 字符，当前业务目录 JSON 373 字符，20 个样本完整消息 1541～1558 字符；
 ≤300 字目标未达，不把字符数冒称 tokens。未进行真实模型或外部数据库验收。
-M3.2 澄清、M3.3 状态、M3.4 执行和 M4 可答性门禁不在本轮。
+M3.1 本身不做澄清；M3.2 接线见下。M3.3 状态、M3.4 执行和 M4 可答性门禁仍未实现。
+
+### M3.2 单轮准备与澄清（已实现）
+
+`await prepare_question(question, catalog, llm=client)` 复用一次 extract_intent，返回冻结的 PreparationResult：
+status、原 ExtractionResult 或 None、missing_slots 元组、Clarification 或 None。
+判断只把 Intent.metric/time_range 显式映射给 check_slots 的两项专用 SlotSpec，
+不传 raw/confidence，不使用旧默认清单、默认说明或 ClarifyState 预算接口。
+
+- 缺指标/时间：status=needs_clarification，保留原抽取结果，按 metric → time_range 只问首项。
+  指标示例按稳定目录键取至多 3 个已登记业务名；时间示例只含固定绝对日期/范围，不读当前日期。
+- 必需槽位不缺：status=slots_complete，保留原 Intent/Completion，不表示可答、可编译、已授权或有数据。
+- EXTRACTION_UNRESOLVED：仅在片段契约完整时，引用首片段、保留全部片段、slot=None；不按词语猜类别。
+- EXTRACTION_MULTI_METRIC_UNSUPPORTED：请求指定一个指标，不选第一项、不重新解析被拒绝响应。
+- 后两种分支 extraction=None，missing_slots=() 表示未运行槽位检查，不伪造部分 Intent、Completion 或统计。
+- 非目标错误（包括未来未知 ExtractionError）和模型/ReplayMiss 原对象透传，不增加修复或追问生成调用。
+
+slots_complete 分支可由调用方继续尝试 L3/L4；needs_clarification 不编译。
+未知指标/维度/机构、yoy/mom/rate、全局 Top N 和空 Scope 在独立集成测试中仍由原编译器拒绝。
+准备层不接收 Scope、不写回 org/日期/过滤/来源/对比/排名/占比默认值，不导入编译、校验、coverage、factory 或执行模块。
+旧槽位/预算接口只保留兼容，旧“按最可能口径处理”文案不是新路径的回退授权。
+
+`tests/fixtures/clarification/cases.yaml` 独立手写准备层预期，引用未改的 20 条旧 EX 回放；
+测试不刷新消息键或响应。demo_prepare 即使 real 环境也只 strict replay，不执行 SQL。
+新 CLI 的澄清属于正常协议结果（退出 0），技术错误非零；demo_extract 旧错误退出码保持。
+新增 95 项测试，全量 1314、黄金 26/26；本轮只标 M3.2 完成，不实现状态、补答合并或执行。
+单轮独立调用不能处理“第二轮只答一个日期”的会话合并，这属于下一步 M3.3。
 
 ---
 
