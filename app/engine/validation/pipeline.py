@@ -17,6 +17,7 @@ from sqlglot import exp
 from app.engine.semantic.models import Intent
 from app.engine.validation.catalog import Catalog
 from app.engine.validation.names import check_columns, check_tables
+from app.engine.validation.org import org_match_not_exact
 from app.engine.validation.policy import Scope, ValidationPolicy
 from app.engine.validation.problems import Problem, ValidationResult
 from app.engine.validation.ratio import share_of_total_invalid
@@ -50,7 +51,7 @@ def validate_sql(
     1. **解析** —— 连 SQL 都解析不出来就别往下走
     2. **副作用** —— 只读是硬红线，先于一切业务规则
     3. **名字** —— 表和列是否存在、表是否在检索范围内
-    4. **业务规则** —— C-04 / C-05 / C-06 / C-07 / C-11 / C-12 / R-RATIO-001
+    4. **业务规则** —— C-04 / C-05 / C-06 / C-07 / C-11 / C-12 / R-RATIO-001 / R-ORG-001
 
     副作用排在业务规则前面的理由：一个带 DELETE 的 SQL，讨论它 GROUP BY
     对不对没有意义，而且给模型的修复提示会跑偏。
@@ -79,6 +80,7 @@ def validate_sql(
     result.extend(table_count_exceeded(statement, intent, policy))
     result.extend(join_not_allowed(statement, intent, policy))
     result.extend(share_of_total_invalid(statement, intent, scope, policy))
+    result.extend(org_match_not_exact(statement, catalog, policy))
 
     return _capped(result, policy)
 

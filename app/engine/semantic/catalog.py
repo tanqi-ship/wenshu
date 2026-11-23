@@ -4,8 +4,8 @@
 
 设计要点：
 
-* **查找是确定性的**：按 code / name / synonyms 匹配，全部 casefold + 去空白。
-  找不到就是找不到，返回 ``None``，由编译器转成明确错误码。
+* **查找是确定性的**：实体名称及普通 coded 值沿用 casefold + 去空白；
+  high_cardinality 值只 trim 并验证精确登记，未知/缺失/歧义抛中立异常。
 * **不持有校验用的 Catalog**：那份只关心名字存不存在，属于
   :mod:`app.engine.validation`，两者刻意分开（见 docs/ARCHITECTURE.md）。
 * **不可变**：``frozen=True``。语义层在编译过程中被改动是最难查的一类 bug。
@@ -17,6 +17,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from app.engine.semantic.dimension import DimensionDef
+from app.engine.semantic.exact_values import ExactValueError, check_value_kind, exact_index, resolve_exact
 from app.engine.semantic.models import MetricDef, RelationDef
 from app.engine.semantic.report import ReportDef
 
@@ -76,8 +77,16 @@ class SemanticCatalog:
     def code(self, dimension_code: str, value: object) -> str | None:
         """把业务显示值翻成数据库存储值。
 
-        已经是存储值（大小写完全一致）时原样返回 —— 让调用方可以幂等调用。
+        严格维度以登记别名/编码共享索引精确解析，失败抛 ExactValueError。
+        普通 coded 维度保留原归一化和未命中 None 契约。
         """
+        dimension = self.dimensions.get(dimension_code)
+        if dimension is not None:
+            check_value_kind(dimension.value_kind)
+            if dimension.value_kind == "high_cardinality":
+                if not isinstance(self.code_map, Mapping):
+                    raise ExactValueError("invalid", "code_map 必须是维度到码值映射的字典。")
+                return resolve_exact(self.code_map.get(dimension_code, {}), value)
         mapping = self.code_map.get(dimension_code) or {}
         if not mapping:
             return None
@@ -111,8 +120,18 @@ class SemanticCatalog:
         reports: Iterable[ReportDef] = (),
     ) -> SemanticCatalog:
         """从序列构造，自动按 code 建索引。测试与 fixture 用。"""
+        if code_map is not None and not isinstance(code_map, Mapping):
+            raise ExactValueError("invalid", "code_map 必须是维度到码值映射的字典。")
         metric_map = {metric.code: metric for metric in metrics}
         dimension_map = {dim.code: dim for dim in dimensions}
+        for dimension in dimension_map.values():
+            check_value_kind(dimension.value_kind)
+            if (
+                dimension.value_kind == "high_cardinality"
+                and code_map is not None
+                and dimension.code in code_map
+            ):
+                exact_index(code_map[dimension.code])
         report_map: dict[str, ReportDef] = {}
         for report in reports:
             if not isinstance(report, ReportDef):

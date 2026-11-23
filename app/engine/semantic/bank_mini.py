@@ -99,6 +99,7 @@ def semantic_catalog() -> SemanticCatalog:
                 },
                 default_level="financial",
                 synonyms=("分行", "支行", "网点"),
+                value_kind="high_cardinality",
             ),
             DimensionDef(
                 code="product",
@@ -113,6 +114,7 @@ def semantic_catalog() -> SemanticCatalog:
                 levels={"default": LevelDef(group_by="parent_org_no", table=ORG_TABLE)},
                 default_level="default",
                 synonyms=("上级行",),
+                value_kind="high_cardinality",
             ),
         ],
         relations=[RelationDef(TABLE, "org_no", ORG_TABLE, "org_no", cardinality="many_to_one")],
@@ -125,12 +127,28 @@ def semantic_catalog() -> SemanticCatalog:
             )
         ],
         code_map={
-            # 维度值 → 数据库存储值。**没有配置的维度，值会原样透传**。
+            # 维度值 → 数据库存储值。严格维度未登记则拒绝，普通 coded 保留旧透传契约。
             # 这正是 fixture 缺陷 D-06 的坑：机构名是高基数值，
             # 必须精确等值，不能 LIKE / 前缀 / 包含（ADR-0002）。
             "org": {
                 "渝北支行": "B001",
-                "两江分行": "O003",
+                "两江分行": "O003",  # 历史演示别名，保留旧输入/黄金 SQL。
+                "渝北": "B001",
+                "江北支行": "B002",
+                "江北": "B002",
+                "总行": "H000",
+                "渝北龙溪分理处": "O001",
+                "渝北回兴储蓄所": "O002",
+                "江北观音桥营业部": "O003",
+            },
+            "parent_org": {
+                "总行": "H000",
+                "渝北支行": "B001",
+                "江北支行": "B002",
+                # 独立 JOIN 内存样本的显式测试登记，不表示真实机构名称。
+                "F001": "F001",
+                "F002": "F002",
+                "F003": "F003",
             },
             "product": {
                 "个人住房贷款": "LP01",

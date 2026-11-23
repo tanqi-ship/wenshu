@@ -529,3 +529,95 @@
   why_hard: |
     空策略恒假必须位于真实物理表 WHERE，先于分组与整体窗口。
     原本没有可见组时返回零行，不能通过补零、外移策略或生成全行分母泄漏信息。
+
+- id: G-023
+  shape: org_exact_registered_alias
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    filters:
+      - dimension: 机构
+        value: 渝北
+  golden: G-023.sql
+  covers: [R-ORG-001, D-06]
+  why_hard: |
+    显式登记简称只能唯一解析到 B001，不能按名称前缀或代码前缀匹配。
+    本级不自动包含 O001/O002 下辖机构，未登记简称应报错而不是猜测。
+
+- id: G-024
+  shape: org_exact_mixed_in
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [机构]
+    filters:
+      - dimension: 机构
+        operator: in
+        value: [渝北支行, B002]
+  golden: G-024.sql
+  covers: [R-ORG-001, R-NAME-001, C-11, D-06]
+  why_hard: |
+    全称和直接编码混合 IN，每个 token 都必须已登记且无歧义，不能部分成功。
+    机构名称只用于 MAX 展示，不因检查机构匹配而误伤编号分组或名称展示。
+
+- id: G-025
+  shape: org_exact_join_parent_and_scope
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [上级机构]
+    filters:
+      - dimension: 机构
+        value: 渝北龙溪分理处
+      - dimension: 上级机构
+        value: 渝北支行
+  scope:
+    tables: [qa_loan_acc_detail, dim_org]
+    row_policies:
+      - table: qa_loan_acc_detail
+        column: org_no
+        operator: in
+        values: [O001, O002]
+  golden: G-025.sql
+  covers: [R-ORG-001, R-TBL-001, C-04, D-06]
+  why_hard: |
+    本级分理处与上级支行分别在两个维度登记内解析，绑定到各自物理列，不从名称推断层级。
+    JOIN 原始列等值键必须继续通过，业务过滤与 Scope 行权限仍在原层求交，不猜测机构树。
+
+- id: G-026
+  shape: org_exact_alias_share_and_scope
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [产品]
+    share:
+      dimension: 产品
+    filters:
+      - dimension: 机构
+        value: 渝北
+      - dimension: 产品
+        value: 小微企业贷款
+  scope:
+    tables: [qa_loan_acc_detail]
+    row_policies:
+      - table: qa_loan_acc_detail
+        column: org_no
+        operator: in
+        values: [B001, B002]
+      - table: qa_loan_acc_detail
+        column: prd_no
+        operator: in
+        values: [LP01, LP03]
+  golden: G-026.sql
+  covers: [R-ORG-001, R-RATIO-001, C-04, C-07, D-06]
+  why_hard: |
+    简称精确为 B001 后仍是整体上下文，不能把业务别名处理混入授权值翻译。
+    机构与产品行策略都必须在聚合前，产品展示过滤仍在整体窗口之后，不改变可见整体分母。

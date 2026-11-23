@@ -232,7 +232,7 @@ G-015~G-018 以及 SQLite 结果验证这些边界；既有 G-001~G-014 不变�
 最内层构造后检查所有实际物理列权限；无关表策略不引入 JOIN，空行权限在分组前恒假、结果零行。
 内层/中层/外层别名避开实际来源与调用者别名，防止派生目录掩盖物理未知列。
 Scope=None 不限制、显式空 Scope 拒绝；整体只来自可见数据，不承诺全库分母。
-非空 Intent.org 尚须规范到 filters，不能借本轮猜测机构口径或冒称 M2.6 完成。
+占比的非空 Intent.org 必须先规范到 filters；M2.6 同时为普通/报表入口补齐显式拒绝，不猜测口径。
 
 **数值**：整数 300/1000 必须是 0.3；若产品行权限只允许总额 400 的产品，比例为 0.75。
 零/NULL 整体返回 NULL；缺组、缺时点、无权限不补行。原数据的 NULL、零、负值不被钳制；负金额比例未必在 0~1。
@@ -244,16 +244,34 @@ Scope=None 不限制、显式空 Scope 拒绝；整体只来自可见数据，�
 只在 share 存在时触发，继续运行现有规则；业务维度/公式是否选对和非拆分上下文是否完整，仍靠知识、黄金及结果测试。
 见 ADR-0011、G-019~G-022；这不是通用 SQL 等价证明或完整生产权限系统。
 
+### 机构值精确解析（M2.6）
+
+`DimensionDef.value_kind="high_cardinality"` 显式启用严格登记，普通 coded 不变。
+`semantic/exact_values.py` 提供中立配置检查、候选索引和原因异常，不 import L3 或 SQL；
+`SemanticCatalog.build` 验证标记及已提供映射，允许暂缺/空映射，仅实际解析业务值时报告缺失。
+别名与存储编码共享 token 空间，收集全部候选，不能优先返回键命中；只 trim，不删内部空白或 casefold。
+已登记简称与编码等幂解析；未知/歧义/非法配置拒绝，手工 replace 目录也重新检查，不静默返回零结果。
+
+`compiler/conditions.py` 为各形状复用严格 eq/in，IN 任一项失败整条拒绝；None 不过滤、空 IN 恒假。
+外部 Scope 是授权存储值，不进业务别名翻译；财务/管户默认列不变，不推导下辖机构。
+普通/报表未规范 Intent.org 报 ORG_CONTEXT_UNRESOLVED，share 保留 SHARE_CONTEXT_UNRESOLVED。
+演示目录仅显式登记 fixture 全称、示例简称和 JOIN 样本编码，旧“两江分行 → O003”保留为历史演示别名。
+
+新增稳定错误：UNKNOWN_CODE / AMBIGUOUS_CODE（symbol_table）、EXACT_VALUE_MAP_MISSING /
+EXACT_VALUE_MAP_INVALID（type_check）、EXACT_FILTER_UNSUPPORTED / ORG_CONTEXT_UNRESOLVED（intent）。
+缺配置不透传、歧义不打分裁决、不从名称前缀回退。见 ADR-0012 与 G-023~G-026。
+
 ### 错误分类（决定给谁看）
 
 | stage | code 示例 | 谁的问题 | 用户可见文案 |
 |---|---|---|---|
 | `symbol_table` | `UNKNOWN_METRIC` / `UNKNOWN_DIMENSION` / `UNKNOWN_CODE` | 语义层没覆盖 | "暂不支持「X」这个指标" |
-| `type_check` | `DIMENSION_NOT_ALLOWED` | 语义层配置 | "「X」指标不支持按「Y」拆分" |
+| `type_check` | `DIMENSION_NOT_ALLOWED` / `EXACT_VALUE_MAP_MISSING` | 语义层配置 | "指标/维度组合或严格值登记尚未配置" |
+| `intent` | `ORG_CONTEXT_UNRESOLVED` / `EXACT_FILTER_UNSUPPORTED` | 输入尚未规范或能力不支持 | "请先明确机构口径并规范到过滤条件" |
 | `scope` | `METRIC_OUT_OF_SCOPE` / `TABLE_NOT_IN_SCOPE` | **权限** | "您没有「X」的查询权限" |
 | `internal` | `AST_INVALID` | **编译器 bug** | "系统内部错误" + 告警 |
 
-**这个分类本身就是产出**：它把"为什么答不了"从一句模糊的失败，变成四个可统计、可归因的口径。
+**这个分类本身就是产出**：它把"为什么答不了"从一句模糊的失败，变成五个可统计、可归因的口径。
 
 ---
 
@@ -283,14 +301,25 @@ Scope=None 不限制、显式空 Scope 拒绝；整体只来自可见数据，�
 
 > 否则编译器把自己的中间结果传给校验器，编译器的 bug 会被自己的校验放过。
 
-规则清单见 `app/engine/validation/rules.py`；R-RATIO-001 的聚焦实现位于 `ratio.py`。每条规则：
+规则清单见 `app/engine/validation/rules.py`；R-RATIO-001 位于 `ratio.py`，R-ORG-001 位于 `org.py`。每条规则：
 
 - 稳定 `code`（如 `NAME_FIELD_IN_GROUP_BY`）→ 评测按 code 聚合，定位退化
 - 业务规则编号（如 `C-11`）→ 业务方能对着《规则汇编》复核
 - 纯函数 + 单测（输入 SQL 字符串，断言 `Problem[]`）
 
-**目前 7 条**：原 6 条加 M2.5 的 `R-RATIO-001`；M2.6 再补 `R-ORG-001` 到 8 条。
+**目前 8 条**：原 6 条加 `R-RATIO-001` 与 `R-ORG-001`。
 Scope 的表范围和 L3 列/行策略已实现，但不把这些现存检查另算作已交付的独立 R-SCOPE-001 规则。
+
+**R-ORG-001 独立边界**：`ValidationPolicy.org_columns` 是复制冻结的 schema.table → 列集合，
+默认保护演示明细及 dim_org 的机构列；其他 schema、改名字段、报表列须显式配置，空映射是可信方明确退出。
+规则不 import L3/语义目录、不接收 code_map，无 Intent 也检查；不按列名片段或字符串“支行”猜机构。
+`org_sources.py` 以独立 Catalog 和查询作用域传递“普通/精确/已变换/无法确认”状态，
+覆盖直接投影/重命名、CTE、派生列、UNION 按位置合并及单源星号；保护不能经函数或混合分支洗掉。
+仅允许原始机构列与字符串 EQ（双向）/IN，或直接列等值 JOIN；真实 %/_ 字符在等值中不禁。
+WHERE/HAVING/JOIN ON/CASE/FILTER 等条件均检查；窗口控制不当标识符来源，COUNT/SUM/AVG 不误标。
+递归机构输出、相关作用域、LATERAL 表值参数和多源歧义不能确认时 fail-closed；不建设通用血缘平台。
+非精确匹配报 ORG_MATCH_NOT_EXACT，来源不明报 ORG_MATCH_SOURCE_UNRESOLVED。
+独立规则证明匹配形状，不证明编码登记、业务唯一性、默认口径正确或完整权限无遗漏；这些仍需知识及结果测试。
 
 ---
 
@@ -304,6 +333,6 @@ Scope 的表范围和 L3 列/行策略已实现，但不把这些现存检查另
 | 失败可重试 | 是（4 次） | **否**（确定性） |
 | 维度口径 | prompt 里的一行散文 | `DimensionDef.levels` 字典 |
 | 权限注入点 | 分散多处（曾泄漏） | **一处**（L3 的 ④） |
-| 拒答原因 | 11 种 reason 散在 4 个节点 | 4 类 stage，可统计 |
+| 拒答原因 | 11 种 reason 散在 4 个节点 | 5 类 stage，可统计 |
 
 **注意：wenshu 不是"更好的 askdb"。** 它放弃了 askdb 擅长的东西（澄清广度、周边功能、中文业务规则沉淀量），只深挖一件事：**把 SQL 生成这件事变成确定的**。

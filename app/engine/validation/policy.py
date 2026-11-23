@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import re
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal
 
 from app.engine.scope import RowPolicy, Scope
@@ -18,6 +21,26 @@ from app.engine.scope import RowPolicy, Scope
 SourceMode = Literal["plain", "report", "union"]
 
 __all__ = ["RowPolicy", "Scope", "SourceMode", "ValidationPolicy"]
+
+
+def _default_org_columns() -> Mapping[str, frozenset[str]]:
+    return {
+        "public.qa_loan_acc_detail": frozenset(
+            {
+                "org_no",
+                "org_nm",
+                "accounting_org_no",
+                "higher_level_org_no",
+                "higher_level_org_nm",
+                "belong_to_org_no",
+                "belong_to_org_nm",
+            }
+        ),
+        "public.dim_org": frozenset({"org_no", "org_nm", "parent_org_no"}),
+    }
+
+
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,3 +99,23 @@ class ValidationPolicy:
 
     #: 一次最多报几个问题。太多会把模型淹掉，也会把反馈文本撑爆。
     max_problems: int = 8
+
+    #: 独立的 schema.table -> 机构保护列；不从业务意图或语义目录生成。
+    org_columns: Mapping[str, frozenset[str]] = field(default_factory=_default_org_columns)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.org_columns, Mapping):
+            raise ValueError("org_columns 必须是全限定表名到列集合的映射。")
+        copied: dict[str, frozenset[str]] = {}
+        for table, columns in self.org_columns.items():
+            if (
+                not isinstance(table, str)
+                or len(table.split(".")) != 2
+                or not all(_IDENTIFIER.fullmatch(part) for part in table.split("."))
+                or not isinstance(columns, (set, frozenset, tuple, list))
+                or not all(isinstance(col, str) and _IDENTIFIER.fullmatch(col) for col in columns)
+            ):
+                raise ValueError("org_columns 仅接受合法 schema.table 及列标识符集合。")
+            key = table.lower()
+            copied[key] = copied.get(key, frozenset()) | frozenset(col.lower() for col in columns)
+        object.__setattr__(self, "org_columns", MappingProxyType(copied))

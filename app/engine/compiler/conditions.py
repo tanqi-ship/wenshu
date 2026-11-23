@@ -18,11 +18,20 @@ from __future__ import annotations
 
 from sqlglot import exp
 
-from app.engine.compiler.errors import JOIN_FILTER_UNSUPPORTED, UNKNOWN_CODE, CompileError
+from app.engine.compiler.errors import (
+    AMBIGUOUS_CODE,
+    EXACT_FILTER_UNSUPPORTED,
+    EXACT_VALUE_MAP_INVALID,
+    EXACT_VALUE_MAP_MISSING,
+    JOIN_FILTER_UNSUPPORTED,
+    UNKNOWN_CODE,
+    CompileError,
+)
 from app.engine.compiler.sources import SourcePlan, dimension_level
 from app.engine.scope import RowPolicy, Scope
 from app.engine.semantic.catalog import SemanticCatalog
 from app.engine.semantic.dimension import DimensionDef
+from app.engine.semantic.exact_values import ExactValueError
 from app.engine.semantic.models import Filter, Intent
 
 
@@ -95,6 +104,8 @@ def build_filter_condition(
     column: exp.Column,
 ) -> exp.Expression:
     """复用码值翻译与谓词构造；物理绑定和运算符边界由各来源编译器负责。"""
+    if dimension.value_kind == "high_cardinality" and item.operator not in {"eq", "in"}:
+        raise CompileError("intent", EXACT_FILTER_UNSUPPORTED, "严格机构过滤只支持 eq/in，不能降级运算符。")
     if item.operator == "in":
         raw = item.value
         values = tuple(raw) if isinstance(raw, (list, tuple, set)) else (raw,)
@@ -110,7 +121,8 @@ def build_filter_condition(
 def _stored_value(catalog: SemanticCatalog, dimension: DimensionDef, raw_value: object) -> str:
     """业务值 → 数据库存储值。**fail-closed**。
 
-    三条规则，顺序即优先级：
+    high_cardinality 始终严格登记并转换中立错误；未知/缺失/歧义均不透传。
+    以下三条是普通 coded 维度的兼容契约：
 
     1. 码值表里有 → 返回存储值
     2. 码值表里没有、但该维度**配了**码值表 → 抛 ``UNKNOWN_CODE``
@@ -120,7 +132,16 @@ def _stored_value(catalog: SemanticCatalog, dimension: DimensionDef, raw_value: 
     靠精确等值（ADR-0002，如机构名这类高基数值）。此时静默透传会得到
     ``org_no = '某某支行'`` —— 永远匹配不到行，结果是 0 而不是错误。
     """
-    stored = catalog.code(dimension.code, raw_value)
+    try:
+        stored = catalog.code(dimension.code, raw_value)
+    except ExactValueError as exc:
+        stage, code = {
+            "unknown": ("symbol_table", UNKNOWN_CODE),
+            "ambiguous": ("symbol_table", AMBIGUOUS_CODE),
+            "missing": ("type_check", EXACT_VALUE_MAP_MISSING),
+            "invalid": ("type_check", EXACT_VALUE_MAP_INVALID),
+        }[exc.reason]
+        raise CompileError(stage, code, f"维度「{dimension.name}」：{exc}") from exc
     if stored is not None:
         return stored
     if catalog.code_map.get(dimension.code):

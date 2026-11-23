@@ -18,6 +18,7 @@
     R-TBL-001   ETL 明细分支最多 2 张表                  （C-04）
     R-JOIN-001  报表 / UNION 分支禁止 JOIN               （C-06）
     R-RATIO-001 占比整体分母与分层过滤（实现在 ratio.py）
+    R-ORG-001   机构原值等值匹配（实现在 org.py / org_sources.py）
 """
 
 from __future__ import annotations
