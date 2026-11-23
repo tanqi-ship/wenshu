@@ -155,7 +155,6 @@ jobs:
     name: Golden-set gate
     runs-on: ubuntu-latest
     needs: tests
-    if: ${{ hashFiles('eval/golden/cases.yaml') != '' }}
     steps:
       - uses: actions/checkout@v5
         with:
