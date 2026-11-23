@@ -210,7 +210,7 @@ def main(argv: list[str]) -> int:
         print(f"  用 from  （错误）: {bad.sql(dialect=DIALECT)}")
         print()
         print("  ★ 两行都不报错。第二行只是把 FROM 整段丢掉了 ——")
-        print("    而 'SELECT 1' 是合法 SQL，所以 L4 的 6 条规则也抓不到。")
+        print("    而 'SELECT 1' 是合法 SQL，所以 L4 的普通规则也抓不到。")
 
     return 0
 

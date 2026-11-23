@@ -104,7 +104,7 @@ def run_one(
     result = validate_sql(sql, catalog=catalog, scope=scope)
     print("--- L4 校验 ---")
     if result.ok:
-        print("  ✓ 通过（6 条业务规则 + 只读 + 名字 + 范围）")
+        print("  ✓ 通过（适用业务规则 + 只读 + 名字 + 范围）")
     else:
         print("  ✗ 未通过：")
         for problem in result.problems:

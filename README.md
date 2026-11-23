@@ -5,11 +5,11 @@
 > **定位**：这是**学习与工程实践**项目，不是产品。
 > 目标是把「问数引擎为什么会不准」这件事拆到底，并给出可验证的答案。
 >
-> **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** / **M2.1 双时点对比** / **M2.2 每月 Top N** / **M2.3 受限双表 JOIN** / **M2.4 报表 UNION ALL** 完成 ——
+> **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** / **M2.1 双时点对比** / **M2.2 每月 Top N** / **M2.3 受限双表 JOIN** / **M2.4 报表 UNION ALL** / **M2.5 整体占比** 完成 ——
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 /
-> 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL**），并且有一条命令能回答"引擎现在算得对不对"：
-> `uv run python -m scripts.check_golden`（18 条手写黄金用例，18/18 通过，覆盖 17 种形状）。**562 个测试全过。**
-> **尚未实现**：占比 / 机构名等值专门规则（M2 下一步），以及同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；
+> 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL** / **同口径整体占比**），并且有一条命令能回答"引擎现在算得对不对"：
+> `uv run python -m scripts.check_golden`（22 条手写黄金用例，22/22 通过，覆盖 21 种形状）。**752 个测试全过。**
+> **尚未实现**：机构名等值专门规则（M2 下一步），以及同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；
 > `question → Intent` 抽取（M3）；可答性门禁与黄金集扩到 30 条（M4）。见 `docs/ROADMAP.md`。
 
 ---
@@ -76,7 +76,11 @@
 `source_mode=report/union` 按去重后的月份数生成 SELECT 或 UNION ALL，直接读取预计算值，
 不 JOIN、不重新聚合、不乘 100。缺月份配置或任一表列权限即整条拒绝；空行策略保留 `1=0` 分支。
 当前产品不良率样例登记 202604~202606，更多月份须先补知识配置。
-**下一步：M2.5 占比（分母为整体）**；L1 自然语言抽取与 L5 生产执行仍未完成。
+**M2.5 占比边界**：新增独立 `Intent.share=ShareSpec(dimension="产品")`，只支持单明细表、单个月末、
+一个拆分维度和普通可加总 SUM。时间/机构上下文/行权限在聚合前生效，整体窗口算完才筛选展示对象；
+同列的产品业务过滤不能带走产品行权限。输出原金额、`total_value` 和小数 `share`，零分母返回 NULL、不乘 100。
+`R-RATIO-001` 独立检查三层结构及显式行策略；具体业务映射仍由知识和黄金/结果测试保证。
+**下一步：M2.6 机构名等值专门规则**；L1 自然语言抽取与 L5 生产执行仍未完成。
 
 
 ---
@@ -97,7 +101,7 @@
 
 ### 2. 规则进代码，不进 prompt
 
-`app/engine/validation/rules.py` 里的 6 条规则，每条都有：稳定 problem code + 业务规则编号（`C-xx`）+ 单测。
+`app/engine/validation/rules.py` 与 `ratio.py` 的 7 条规则，每条都有：稳定 problem code + 业务规则编号（`C-xx`）+ 单测。
 
 这不是凭空的偏好。NVIDIA auto-ontology 在它的 ReAct 提示词 docstring 里给出了他们的实测结论：
 
@@ -118,7 +122,7 @@ askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写�
 
 ```bash
 uv sync --group dev
-uv run pytest                                # 562 passed，不需要外部数据库 / 模型 / 网络
+uv run pytest                                # 752 passed，不需要外部数据库 / 模型 / 网络
 uv run ruff check .                          # All checks passed
 uv run python -m scripts.demo_ask            # 端到端演示：问题 → Intent → SQL → 校验
 uv run python -m scripts.check_golden        # 黄金集门禁：引擎产出 vs 手写黄金 SQL
@@ -156,8 +160,8 @@ wenshu/
 │   ├── engine/
 │   │   ├── semantic/       # L0 语义层领域模型（Intent / MetricDef / DimensionDef / RelationDef）
 │   │   │                   #    + bank_mini.py：演示与测试共用的唯一一份假语义层
-│   │   ├── compiler/       # L3 编译器（0 次模型）：__init__ 装配 / time / metrics / conditions / comparison / topn / sources / permissions / reports / report_time
-│   │   ├── validation/     # L4 校验层（只读 / 名字 / 范围 / 6 条业务规则 → M2 补到 8 条）
+│   │   ├── compiler/       # L3 编译器（0 次模型）：__init__ 装配 / time / metrics / conditions / comparison / topn / sources / permissions / reports / report_time / share
+│   │   ├── validation/     # L4 校验层（只读 / 名字 / 范围 / 7 条业务规则 → M2 补到 8 条）
 │   │   ├── clarify/        # L1/L2 意图清洗 + 确定性槽位检查
 │   │   ├── retrieval/      # L2 检索式定范围：按业务词找候选表/列/指标（M3）
 │   │   └── coverage/       # L2 可答性门禁：COMPILE / CLARIFY / REFUSE（M4）

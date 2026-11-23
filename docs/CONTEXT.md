@@ -3,7 +3,7 @@
 > **用途**：这是一份「换会话也不会丢背景」的交接文档。
 > 新会话/新同事进来，读这一份就能知道：我们在做什么、做到哪了、怎么跑、下一步做什么。
 >
-> 最后更新：2026-11-23，M2.4 显式报表与 UNION ALL 完成时。
+> 最后更新：2026-11-23，M2.5 同口径整体占比完成时。
 
 ---
 
@@ -73,13 +73,13 @@
 | **M0** | 骨架 + LLM 边界（fake/replay/real）+ 校验层 6 条规则 + 澄清槽位 + fixture + 评测集 | ✅ 完成 |
 | **M1** | 语义层（指标/维度/码值/关系）+ **编译器最小闭环** + `Scope` 权限注入 | ✅ 完成 |
 | **M1.5** | 黄金集门禁：`scripts/golden.py`（归一化/比对）+ `scripts/check_golden.py`（CLI）+ `eval/golden/cases.yaml` + pytest 接线 | ✅ 完成 |
-| **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / **2.2 每月 Top N ✅** / **2.3 双表 JOIN ✅** / **2.4 报表 UNION ALL ✅** / 占比 / 机构名等值 | 🟡 进行中（4/6） |
+| **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / **2.2 每月 Top N ✅** / **2.3 双表 JOIN ✅** / **2.4 报表 UNION ALL ✅** / **2.5 整体占比 ✅** / 机构名等值 | 🟡 进行中（5/6） |
 | **M3** | `question → Intent`（LLM，首次引入模型）+ 澄清接线 + 只读执行 | ⬜ |
 | **M4** | 可答性门禁 + 黄金集扩到 30 条 + 评测报告 + 失败归因 | ⬜ |
 
-**现在能做什么**：给定一个结构化 `Intent`，产出**通过 6 条规则校验**的 SQL，**0 次模型调用**；
-并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，18 条用例 = 18/18，覆盖 17 种形状；562 项测试通过）。
-能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**、**每月 Top N**、**受限双表 INNER/LEFT JOIN**、**固定粒度单月报表与多月 UNION ALL**。
+**现在能做什么**：给定一个结构化 `Intent`，产出**通过适用业务规则校验（共 7 条）**的 SQL，**0 次模型调用**；
+并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，22 条用例 = 22/22，覆盖 21 种形状；752 项测试通过）。
+能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**、**每月 Top N**、**受限双表 INNER/LEFT JOIN**、**固定粒度单月报表与多月 UNION ALL**、**单表月末单维度的整体占比**。
 双表首批只做事实表指标 + 唯一维表维度/过滤，不与 delta/Top N 混用。
 
 **现在还不能做什么**：**给一句人话，产出 SQL。** 因为 `question → Intent` 属于 M3。
@@ -175,11 +175,11 @@ ruff check app scripts tests
 
 ```bash
 uv sync --group dev      # 建/更新 venv
-uv run pytest            # 562 passed（含 SQLite 内存测试，不需要外部数据库/模型/网络）
+uv run pytest            # 752 passed（含 SQLite 内存测试，不需要外部数据库/模型/网络）
 uv run ruff check .      # All checks passed
 uv run ruff format --check .
 uv run python -m scripts.demo_ask       # 端到端演示（见下）
-uv run python -m scripts.check_golden   # 黄金集门禁（18/18 通过）
+uv run python -m scripts.check_golden   # 黄金集门禁（22/22 通过）
 ```
 
 ### 为什么用 uv 而不是手工 venv
@@ -262,9 +262,14 @@ L4 不负责从同名 npl_rate 自动判别业务口径，正确来源还由显�
    `ReportDef` 不覆盖明细公式，固定粒度直接投影；report/union 均按月份数选 SELECT/UNION ALL。
    缺任一分区或表列权限整条拒绝，空行策略只令自身分支恒假；各分支独立别名、独立 L4 列目录。
    样例登记产品不良率 202604~202606；真实口径与唯一粒度由配置维护者和源表约束负责，不自动发现报表。
-5. **下一步 M2.5**：占比（分子 + 整体分母），需先明确分母、过滤与权限边界；随后 M2.6 机构名等值。
-6. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
-   - `MetricDef.is_percentage`（`semantic/models.py`）目前**没有任何地方使用** → `unit="%"` 不会自动触发 `R-PCT-001`
+5. ~~**M2.5**：同口径整体占比~~ ✅ **已完成**：`compiler/share.py` + `validation/ratio.py` + `ShareSpec` 严格加载
+   + `G-019~G-022.sql` + 178 项专项测试（意图 17、编译/SQLite 104、独立校验 57）+ ADR-0011。
+   单明细表、单个月末、单维度和可加 SUM；三层为“分组金额 → 整体空窗口 → 展示与除法”。
+   非拆分上下文保留，拆分业务过滤外移，全部行策略仍在聚合前；整数除法安全，零整体为 NULL。
+   不与报表/JOIN/Top N/时点对比混用，不给已有比例再次求占比；非空 org 须规范到 filters，不能忽略。
+6. **下一步 M2.6**：机构名等值专门规则（已有码值等值编译不等于独立规则已验收）。
+7. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
+   - `MetricDef.is_percentage` 已用于拒绝对现有比率再次计算占比；但 `unit="%"` 仍未统一自动传给所有路径的 `R-PCT-001` 别名输入
    - `tests` job 里的 `scripts.seed_fixture` **已从 CI 移除**（它只支持 PostgreSQL，而 CI 给的是 `sqlite:///`）。
      脚本本身仍然只支持 PostgreSQL —— 等 M4 真的要验方言时再按 profile 处理（ADR-0006 未决项）
    - `comparison` 的另外三个值（`yoy` / `mom` / `rate`）在 `Intent` 里是合法字段，

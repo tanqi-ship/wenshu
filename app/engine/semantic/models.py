@@ -65,6 +65,13 @@ class Filter:
 
 
 @dataclass(frozen=True, slots=True)
+class ShareSpec:
+    """同一指标按指定业务维度拆分，占当前上下文整体的比例。"""
+
+    dimension: str
+
+
+@dataclass(frozen=True, slots=True)
 class Intent:
     """用户想查什么。这是模型的唯一输出物。"""
 
@@ -83,6 +90,8 @@ class Intent:
     #: 那个判断由 :mod:`app.engine.clarify.slots` 的确定性槽位检查负责。
     confidence: float = 0.0
     raw: Mapping[str, object] = field(default_factory=dict)
+    #: 占比独立于时间对比；放在末尾保持旧位置参数顺序。
+    share: ShareSpec | None = None
 
     @property
     def needs_monthly_topn(self) -> bool:
@@ -109,6 +118,7 @@ _INTENT_KEYS = frozenset(
         "top_n",
         "top_n_grain",
         "source_mode",
+        "share",
     }
 )
 _TIME_KEYS = frozenset({"grain", "raw", "points", "start", "end"})
@@ -187,6 +197,15 @@ def _filter_from_mapping(raw: object) -> Filter:
     )
 
 
+def _share_from_mapping(raw: object) -> ShareSpec:
+    payload = _as_mapping(raw, "share")
+    _reject_unknown_keys(payload, frozenset({"dimension"}), "share")
+    dimension = payload.get("dimension")
+    if not isinstance(dimension, str) or not dimension.strip():
+        raise ValueError("share.dimension 必须是非空业务维度名称。")
+    return ShareSpec(dimension=dimension.strip())
+
+
 def intent_from_mapping(data: Mapping[str, object]) -> Intent:
     """从配置结构构造 :class:`Intent`。黄金集用例与评测集用这个入口。
 
@@ -239,6 +258,7 @@ def intent_from_mapping(data: Mapping[str, object]) -> Intent:
         top_n=int(top_n) if top_n is not None else None,
         top_n_grain=str(data.get("top_n_grain") or "").strip() or None,
         source_mode=_choice(source_mode or "plain", _SOURCE_MODES, "source_mode"),  # type: ignore[arg-type]
+        share=_share_from_mapping(data["share"]) if data.get("share") is not None else None,
     )
 
 

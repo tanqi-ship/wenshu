@@ -17,6 +17,7 @@
     R-TOPN-001  "每月 Top N" 必须用窗口函数              （C-12）
     R-TBL-001   ETL 明细分支最多 2 张表                  （C-04）
     R-JOIN-001  报表 / UNION 分支禁止 JOIN               （C-06）
+    R-RATIO-001 占比整体分母与分层过滤（实现在 ratio.py）
 """
 
 from __future__ import annotations

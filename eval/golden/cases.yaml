@@ -432,3 +432,100 @@
   why_hard: |
     五月空行权限必须保留 WHERE 1=0 和该月分支；四月、六月合法结果不受影响。
     这与缺配置或缺表列权限不同：后者整条失败，不能通过跳过分支伪装成功。
+
+
+- id: G-019
+  shape: share_of_total
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [产品]
+    share:
+      dimension: 产品
+  golden: G-019.sql
+  covers: [R-RATIO-001, R-PCT-001, C-07, R-NAME-001, C-11]
+  why_hard: |
+    分子与整体都是同一个贷款余额公式，按产品编号聚合、名称只 MAX 展示。
+    整体必须对完整分组做空窗口 SUM，不能分区或变成累计值。
+    用 1.0 提升整数除法，NULLIF 保护零分母，占比不乘 100、不填成 0%。
+
+- id: G-020
+  shape: share_context_and_display_filter
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [产品]
+    share:
+      dimension: 产品
+    filters:
+      - dimension: 机构
+        value: 渝北支行
+      - dimension: 产品
+        value: 小微企业贷款
+  golden: G-020.sql
+  covers: [R-RATIO-001, C-07, C-11]
+  why_hard: |
+    同机构是分母上下文，必须留在物理 WHERE；产品只决定展示对象，必须放在最外层。
+    只看小微企业贷款不能把整体变成该产品自身，否则任何单产品都会得到 100%。
+    两种业务名都须精确转换为数据库编码，不能从用户字符串猜物理列。
+
+- id: G-021
+  shape: share_product_policy_and_display
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [产品]
+    share:
+      dimension: 产品
+    filters:
+      - dimension: 机构
+        value: 渝北支行
+      - dimension: 产品
+        value: LP03
+  scope:
+    tables: [qa_loan_acc_detail]
+    columns:
+      qa_loan_acc_detail: [etl_dt, org_no, prd_no, prd_nm, current_balnc_cny]
+    row_policies:
+      - table: qa_loan_acc_detail
+        column: prd_no
+        operator: in
+        values: [LP01, LP03]
+      - table: dim_org
+        column: org_no
+  golden: G-021.sql
+  covers: [R-RATIO-001, C-04, C-07]
+  why_hard: |
+    同样是 prd_no，行权限必须在聚合前限定可见整体，业务筛选仍在整体计算之后。
+    不能按列名把两者一并外移或删除，也不能为了全行分母越过产品行权限。
+    未使用的维表空策略不应引入 JOIN；全部实际列在外层包装前检查白名单。
+
+- id: G-022
+  shape: share_empty_policy
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [产品]
+    share:
+      dimension: 产品
+    filters:
+      - dimension: 机构
+        value: 渝北支行
+  scope:
+    tables: [qa_loan_acc_detail]
+    row_policies:
+      - table: qa_loan_acc_detail
+        column: prd_no
+  golden: G-022.sql
+  covers: [R-RATIO-001, C-04, C-07]
+  why_hard: |
+    空策略恒假必须位于真实物理表 WHERE，先于分组与整体窗口。
+    原本没有可见组时返回零行，不能通过补零、外移策略或生成全行分母泄漏信息。

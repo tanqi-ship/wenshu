@@ -90,6 +90,7 @@ org          : 机构短语原文
 dimensions   : 维度名元组
 filters      : Filter(dimension, value, operator)   ← value 必须是数据库存储值
 comparison   : delta | yoy | mom | rate
+share        : ShareSpec(dimension) | None  # 同一指标按一个业务维度占上下文整体的比例
 top_n        : int | None
 top_n_grain  : "month" 表示"每月 Top N"
 source_mode  : plain | report | union
@@ -104,7 +105,7 @@ source_mode  : plain | report | union
 
 ## 四、L3：编译器内部五步
 
-以下展开明细 plain 路径；报表路径在解析出业务指标后、明细来源解析之前分流，见 M2.4 小节。
+以下展开无 share 的明细 plain 路径；占比和报表在业务指标解析后、普通来源解析前分流，见 M2.4/M2.5 小节。
 
 ```
 compile_intent(intent, semantic, scope) -> exp.Query
@@ -212,6 +213,37 @@ L3 再验证手工构造的目录，配置错误转 `REPORT_CONFIG_INVALID`。�
 同名列不是同一口径的证据；产品标准 npl_rate 的来源显式登记，不能替换为逾期口径表。
 G-015~G-018 以及 SQLite 结果验证这些边界；既有 G-001~G-014 不变。详见 ADR-0010。
 
+### 同口径整体占比（M2.5）
+
+`Intent.share=ShareSpec(dimension="产品")` 是独立业务意图，不复用 comparison=rate。
+字段追加到 Intent 末尾，严格加载 share.dimension；未给 share 的旧输入不改变 SQL 或错误码。
+先派发到 `compiler/share.py`，保证 report/union/Top N 等分支不会默默忽略占比请求。
+首版只接受唯一明细来源、真实单个月末、一个拆分维度和普通可加 SUM（含条件 SUM）。
+拒绝已有比例、DISTINCT/嵌套聚合、外部列、子查询公式和形状混用，不放宽旧 JOIN 规则。
+
+三层职责固定：
+
+1. **分组**：物理 WHERE 为时间 → 非拆分维度上下文 → 当前表全部行策略；按编号分组、名称只 MAX。
+2. **整体**：原样传递各组金额，`SUM(分组金额) OVER () AS total_value`；不分区、不累计、不提前筛选或 LIMIT。
+3. **展示**：占比维度的业务 eq/in 过滤在这一层；输出编号/可选名称/原金额/整体/share，按编号排序。
+   占比使用小数提升和 `NULLIF(total_value, 0)`，不乘 100、不取整、不填补 NULL。
+
+同一 prd_no 列可能同时出现在行权限和展示过滤；按输入来源区分，不能按列名全部外移。
+最内层构造后检查所有实际物理列权限；无关表策略不引入 JOIN，空行权限在分组前恒假、结果零行。
+内层/中层/外层别名避开实际来源与调用者别名，防止派生目录掩盖物理未知列。
+Scope=None 不限制、显式空 Scope 拒绝；整体只来自可见数据，不承诺全库分母。
+非空 Intent.org 尚须规范到 filters，不能借本轮猜测机构口径或冒称 M2.6 完成。
+
+**数值**：整数 300/1000 必须是 0.3；若产品行权限只允许总额 400 的产品，比例为 0.75。
+零/NULL 整体返回 NULL；缺组、缺时点、无权限不补行。原数据的 NULL、零、负值不被钳制；负金额比例未必在 0~1。
+
+**独立 L4**：`validation/ratio.py` 的 R-RATIO-001 从 SQL 文本重新识别三层链、同一金额、空窗口、
+除法保护和统计时点；用原始 Scope 独立识别必须保留在底层 AND 中的行策略。
+拆分列的非权限取值条件进入底层时报 RATIO_DENOMINATOR_FILTERED；丢权限报 RATIO_SCOPE_POLICY_MISSING；
+其他不合法规范形状报 RATIO_SHAPE_INVALID。不 import 编译器或语义目录，不接收拆分计划。
+只在 share 存在时触发，继续运行现有规则；业务维度/公式是否选对和非拆分上下文是否完整，仍靠知识、黄金及结果测试。
+见 ADR-0011、G-019~G-022；这不是通用 SQL 等价证明或完整生产权限系统。
+
 ### 错误分类（决定给谁看）
 
 | stage | code 示例 | 谁的问题 | 用户可见文案 |
@@ -251,13 +283,14 @@ G-015~G-018 以及 SQLite 结果验证这些边界；既有 G-001~G-014 不变�
 
 > 否则编译器把自己的中间结果传给校验器，编译器的 bug 会被自己的校验放过。
 
-规则清单见 `app/engine/validation/rules.py`。每条规则：
+规则清单见 `app/engine/validation/rules.py`；R-RATIO-001 的聚焦实现位于 `ratio.py`。每条规则：
 
 - 稳定 `code`（如 `NAME_FIELD_IN_GROUP_BY`）→ 评测按 code 聚合，定位退化
 - 业务规则编号（如 `C-11`）→ 业务方能对着《规则汇编》复核
 - 纯函数 + 单测（输入 SQL 字符串，断言 `Problem[]`）
 
-**目前 6 条，M2 补到 8 条**（新增 `R-SCOPE-001` 范围校验、`R-ORG-001` 机构名等值匹配）。
+**目前 7 条**：原 6 条加 M2.5 的 `R-RATIO-001`；M2.6 再补 `R-ORG-001` 到 8 条。
+Scope 的表范围和 L3 列/行策略已实现，但不把这些现存检查另算作已交付的独立 R-SCOPE-001 规则。
 
 ---
 

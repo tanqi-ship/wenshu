@@ -30,8 +30,9 @@
 **已实现（M2.2）**：每月 Top N：月末聚合 + ROW_NUMBER 排名 + 外层筛选。
 **已实现（M2.3）**：受限双表 INNER/LEFT JOIN；关系、基数、字段与权限确定性绑定。
 **已实现（M2.4）**：显式报表来源、整月分区与逐分支权限检查、UNION ALL。
+**已实现（M2.5）**：单表月末单维度占比；上下文/权限先过滤、整体窗口后筛展示。
 **未实现（M2）**：同比 / 环比 / 比率、全局 Top N、多跳关联、
-占比、维度白名单类型检查。
+维度白名单类型检查。
 """
 
 from __future__ import annotations
@@ -50,6 +51,7 @@ from app.engine.compiler.errors import (
 from app.engine.compiler.metrics import bind_join_metric
 from app.engine.compiler.permissions import check_column_scope
 from app.engine.compiler.reports import compile_report
+from app.engine.compiler.share import compile_share
 from app.engine.compiler.sources import SourcePlan, dimension_level, resolve_sources
 from app.engine.compiler.time import build_point_condition, build_time_condition, month_end_range
 from app.engine.compiler.topn import resolve_monthly_topn, wrap_monthly_topn
@@ -84,6 +86,10 @@ def compile_intent(
 
     # ① resolve —— 符号表查找
     metric = _resolve_metric(intent, catalog)
+    if intent.share is not None:
+        return compile_share(
+            intent, metric, catalog, scope=scope, policy=policy, alias=alias, dialect=dialect
+        )
     if intent.source_mode in {"report", "union"}:
         return compile_report(intent, metric, catalog, scope=scope, alias=alias, dialect=dialect)
     sources = resolve_sources(intent, metric, catalog, scope=scope, alias=alias)
