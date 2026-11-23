@@ -5,11 +5,11 @@
 > **定位**：这是**学习与工程实践**项目，不是产品。
 > 目标是把「问数引擎为什么会不准」这件事拆到底，并给出可验证的答案。
 >
-> **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** / **M2.1 双时点对比** / **M2.2 每月 Top N** / **M2.3 受限双表 JOIN** 完成 ——
+> **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** / **M2.1 双时点对比** / **M2.2 每月 Top N** / **M2.3 受限双表 JOIN** / **M2.4 报表 UNION ALL** 完成 ——
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 /
-> 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN**），并且有一条命令能回答"引擎现在算得对不对"：
-> `uv run python -m scripts.check_golden`（14 条手写黄金用例，14/14 通过，覆盖 13 种形状）。**398 个测试全过。**
-> **尚未实现**：同比 / 环比 / 比率、全局 Top N、多跳 JOIN、报表 UNION 分支（M2 剩余）；
+> 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL**），并且有一条命令能回答"引擎现在算得对不对"：
+> `uv run python -m scripts.check_golden`（18 条手写黄金用例，18/18 通过，覆盖 17 种形状）。**562 个测试全过。**
+> **尚未实现**：占比 / 机构名等值专门规则（M2 下一步），以及同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；
 > `question → Intent` 抽取（M3）；可答性门禁与黄金集扩到 30 条（M4）。见 `docs/ROADMAP.md`。
 
 ---
@@ -72,6 +72,13 @@
 
 细节见 `docs/ARCHITECTURE.md`。
 
+**M2.4 报表边界**：`ReportDef` 显式登记指标、月份分表和固定维度；不替换明细公式。
+`source_mode=report/union` 按去重后的月份数生成 SELECT 或 UNION ALL，直接读取预计算值，
+不 JOIN、不重新聚合、不乘 100。缺月份配置或任一表列权限即整条拒绝；空行策略保留 `1=0` 分支。
+当前产品不良率样例登记 202604~202606，更多月份须先补知识配置。
+**下一步：M2.5 占比（分母为整体）**；L1 自然语言抽取与 L5 生产执行仍未完成。
+
+
 ---
 
 ## 三、三条必须从第一天遵守的纪律
@@ -111,7 +118,7 @@ askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写�
 
 ```bash
 uv sync --group dev
-uv run pytest                                # 398 passed，不需要外部数据库 / 模型 / 网络
+uv run pytest                                # 562 passed，不需要外部数据库 / 模型 / 网络
 uv run ruff check .                          # All checks passed
 uv run python -m scripts.demo_ask            # 端到端演示：问题 → Intent → SQL → 校验
 uv run python -m scripts.check_golden        # 黄金集门禁：引擎产出 vs 手写黄金 SQL
@@ -149,7 +156,7 @@ wenshu/
 │   ├── engine/
 │   │   ├── semantic/       # L0 语义层领域模型（Intent / MetricDef / DimensionDef / RelationDef）
 │   │   │                   #    + bank_mini.py：演示与测试共用的唯一一份假语义层
-│   │   ├── compiler/       # L3 编译器（0 次模型）：__init__ 装配 / time / metrics / conditions / comparison / topn / sources / permissions
+│   │   ├── compiler/       # L3 编译器（0 次模型）：__init__ 装配 / time / metrics / conditions / comparison / topn / sources / permissions / reports / report_time
 │   │   ├── validation/     # L4 校验层（只读 / 名字 / 范围 / 6 条业务规则 → M2 补到 8 条）
 │   │   ├── clarify/        # L1/L2 意图清洗 + 确定性槽位检查
 │   │   ├── retrieval/      # L2 检索式定范围：按业务词找候选表/列/指标（M3）

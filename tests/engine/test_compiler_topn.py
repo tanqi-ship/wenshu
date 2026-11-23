@@ -192,7 +192,7 @@ def test_custom_snapshot_column_and_table_alias() -> None:
         ({"top_n_grain": None}, "TOPN_UNSUPPORTED"),
         ({"top_n_grain": "year"}, "TOPN_UNSUPPORTED"),
         ({"comparison": "delta"}, "TOPN_UNSUPPORTED"),
-        ({"source_mode": "report"}, "TOPN_UNSUPPORTED"),
+        ({"source_mode": "report"}, "REPORT_SHAPE_UNSUPPORTED"),
         ({"dimensions": ()}, "TOPN_DIMENSION_REQUIRED"),
         ({"time_range": None}, "TIME_UNRESOLVED"),
         ({"time_range": TimeRange(grain="month")}, "TIME_UNRESOLVED"),

@@ -336,3 +336,99 @@
     LEFT 的右表权限没有取值时，必须返回空结果，而不是把全部主表金额挂到 NULL 分组。
     因此权限恒假条件留在 WHERE，不能仅追加到 ON 或静默丢弃。
     编译器不因权限改变关联方向，也不改变从哪张表取指标。
+
+
+- id: G-015
+  shape: report_single_month
+  intent:
+    metric: 不良贷款率
+    source_mode: report
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [产品]
+  golden: G-015.sql
+  eval_case: AQ-006
+  covers: [R-JOIN-001, C-06, R-PCT-001, C-07, D-04]
+  why_hard: |
+    npl_rate 同名不代表同一口径，必须读标准产品表而不是逾期口径表。
+    产品/月主键成立时直接投影与 AQ-006 原 MAX/GROUP BY 答案业务等价，不冒称文本一致。
+    不良率仍是 0~1，不乘 100，不再次汇总，也不要求底层明细表权限。
+
+- id: G-016
+  shape: report_union_all
+  intent:
+    metric: 不良贷款率
+    source_mode: union
+    time:
+      grain: range
+      start: "2026-04-01"
+      end: "2026-06-30"
+    dimensions: [产品]
+  golden: G-016.sql
+  covers: [R-JOIN-001, C-06, R-PCT-001, D-11]
+  why_hard: |
+    三个月必须完整解析三个显式分表，不能受明细双表上限影响，也不能静默丢月。
+    每个分支保留月份列并检查真实月份，最终 UNION ALL 按月份/产品排序。
+    别名 t1/t1_2/t1_3 独立，防止 L4 名字目录被后一个分支覆盖。
+
+- id: G-017
+  shape: report_filters_and_permissions
+  intent:
+    metric: 不良贷款率
+    source_mode: report
+    time:
+      grain: month
+      points: ["2026-04-01", "2026-05-01"]
+    dimensions: [产品]
+    filters:
+      - dimension: 产品
+        operator: in
+        value: [小微企业贷款, 消费贷款]
+  scope:
+    tables: [rpt_npl_by_product_202604, rpt_npl_by_product_202605]
+    columns:
+      rpt_npl_by_product_202604: [stat_month, prd_no, prd_nm, npl_rate, npl_balance]
+      rpt_npl_by_product_202605: [stat_month, prd_no, prd_nm, npl_rate]
+    row_policies:
+      - table: rpt_npl_by_product_202605
+        column: prd_no
+        values: [LP07]
+      - table: rpt_npl_by_product_202604
+        column: npl_balance
+        values: ["2850000"]
+      - table: qa_loan_acc_detail
+        column: org_no
+  golden: G-017.sql
+  covers: [R-JOIN-001, C-06, C-04, D-11]
+  why_hard: |
+    产品业务名转编码后，两个月分别与自身的行权限求交，不能把五月策略用于四月。
+    四月策略额外读取 npl_balance，需要四月列权限，但不能要求五月白名单也包含它。
+    未使用的明细表空行策略既不能增加 JOIN，也不能把报表过滤成空。
+
+- id: G-018
+  shape: report_union_false_branch
+  intent:
+    metric: 不良贷款率
+    source_mode: union
+    time:
+      grain: month
+      start: "2026-04-01"
+      end: "2026-06-30"
+    dimensions: [产品]
+  scope:
+    tables: [rpt_npl_by_product_202604, rpt_npl_by_product_202605, rpt_npl_by_product_202606]
+    row_policies:
+      - table: rpt_npl_by_product_202604
+        column: prd_no
+        values: [LP03]
+      - table: rpt_npl_by_product_202605
+        column: prd_no
+      - table: rpt_npl_by_product_202606
+        column: prd_no
+        values: [LP07]
+  golden: G-018.sql
+  covers: [R-JOIN-001, C-06, C-04, D-11]
+  why_hard: |
+    五月空行权限必须保留 WHERE 1=0 和该月分支；四月、六月合法结果不受影响。
+    这与缺配置或缺表列权限不同：后者整条失败，不能通过跳过分支伪装成功。

@@ -242,12 +242,15 @@ def test_three_sources_are_rejected_from_metrics_or_dimensions() -> None:
         {"comparison": "yoy"},
         {"top_n": 1, "top_n_grain": "month"},
         {"top_n_grain": "month"},
-        {"source_mode": "report"},
-        {"source_mode": "union"},
     ],
 )
 def test_join_shape_combinations_are_rejected(changes) -> None:
     assert_compile_error("JOIN_SHAPE_UNSUPPORTED", stage="intent", intent=join_intent(**changes))
+
+
+@pytest.mark.parametrize("mode", ["report", "union"])
+def test_report_routing_does_not_fall_back_to_join_without_registered_report(mode) -> None:
+    assert_compile_error("REPORT_SOURCE_MISSING", stage="symbol_table", intent=join_intent(source_mode=mode))
 
 
 @pytest.mark.parametrize("operator", ["gte", "lte", "between", "like"])

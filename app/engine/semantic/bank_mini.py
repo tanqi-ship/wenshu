@@ -24,11 +24,14 @@ from __future__ import annotations
 from app.engine.semantic.catalog import SemanticCatalog
 from app.engine.semantic.dimension import DimensionDef, LevelDef
 from app.engine.semantic.models import MetricDef, RelationDef
+from app.engine.semantic.report import ReportDef
 from app.engine.validation.catalog import Catalog
 
 #: 主表。与 ``fixtures/sql/bank_fixture.sql`` 里的表同名（那份才是真实 schema）。
 TABLE = "qa_loan_acc_detail"
 ORG_TABLE = "dim_org"
+REPORT_TABLES = tuple(f"rpt_npl_by_product_{month}" for month in ("202604", "202605", "202606"))
+REPORT_COLUMNS = ("stat_month", "prd_no", "prd_nm", "npl_balance", "npl_rate")
 ORG_COLUMNS = ("org_no", "org_nm", "parent_org_no", "org_level", "org_type")
 
 #: 语义层里登记过的列。刻意**不**包含表里的全部列 ——
@@ -47,7 +50,7 @@ TABLE_COLUMNS: tuple[str, ...] = (
 
 
 def semantic_catalog() -> SemanticCatalog:
-    """三个指标 + 三个维度 + 一条多对一关系；旧维度不自动改来源。"""
+    """三个指标 + 三个维度 + 一条关系 + 产品不良率报表；不覆盖明细口径。"""
     return SemanticCatalog.build(
         metrics=[
             MetricDef(
@@ -113,6 +116,14 @@ def semantic_catalog() -> SemanticCatalog:
             ),
         ],
         relations=[RelationDef(TABLE, "org_no", ORG_TABLE, "org_no", cardinality="many_to_one")],
+        reports=[
+            ReportDef(
+                metric_code="npl_ratio",
+                value_column="npl_rate",
+                dimensions={"product": LevelDef(group_by="prd_no", display="prd_nm")},
+                partitions=dict(zip(("202604", "202605", "202606"), REPORT_TABLES, strict=True)),
+            )
+        ],
         code_map={
             # 维度值 → 数据库存储值。**没有配置的维度，值会原样透传**。
             # 这正是 fixture 缺陷 D-06 的坑：机构名是高基数值，
@@ -137,4 +148,7 @@ def validation_catalog() -> Catalog:
     刻意让 schema 是 ``public``：校验器保留 schema 这一层，
     同名表出现在不同 schema 时要求写全限定名，而不是靠 search_path 猜。
     """
-    return Catalog.from_mapping({"public": {TABLE: list(TABLE_COLUMNS), ORG_TABLE: list(ORG_COLUMNS)}})
+    tables = {TABLE: list(TABLE_COLUMNS), ORG_TABLE: list(ORG_COLUMNS)}
+    for table in (*REPORT_TABLES, "rpt_npl_by_overdue_202604"):
+        tables[table] = list(REPORT_COLUMNS)
+    return Catalog.from_mapping({"public": tables})

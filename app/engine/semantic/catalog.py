@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 
 from app.engine.semantic.dimension import DimensionDef
 from app.engine.semantic.models import MetricDef, RelationDef
+from app.engine.semantic.report import ReportDef
 
 
 def _norm(value: object) -> str:
@@ -26,13 +27,15 @@ def _norm(value: object) -> str:
 
 @dataclass(frozen=True, slots=True)
 class SemanticCatalog:
-    """指标 / 维度 / 表关系 / 码值。"""
+    """指标 / 维度 / 表关系 / 码值 / 可选预计算报表来源。"""
 
     metrics: Mapping[str, MetricDef] = field(default_factory=dict)
     dimensions: Mapping[str, DimensionDef] = field(default_factory=dict)
     relations: tuple[RelationDef, ...] = ()
     #: 维度编码 -> {中文值: 数据库存储值}
     code_map: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
+    #: 同指标的报表来源；不覆盖明细公式与来源。
+    reports: Mapping[str, ReportDef] = field(default_factory=dict)
 
     # -- 指标 --------------------------------------------------------------
     def metric(self, term: str) -> MetricDef | None:
@@ -105,13 +108,25 @@ class SemanticCatalog:
         dimensions: Iterable[DimensionDef] = (),
         relations: Iterable[RelationDef] = (),
         code_map: Mapping[str, Mapping[str, str]] | None = None,
+        reports: Iterable[ReportDef] = (),
     ) -> SemanticCatalog:
         """从序列构造，自动按 code 建索引。测试与 fixture 用。"""
+        metric_map = {metric.code: metric for metric in metrics}
+        dimension_map = {dim.code: dim for dim in dimensions}
+        report_map: dict[str, ReportDef] = {}
+        for report in reports:
+            if not isinstance(report, ReportDef):
+                raise ValueError("reports 中每项必须是 ReportDef。")
+            report.validate(metric_codes=metric_map, dimension_codes=dimension_map)
+            if report.metric_code in report_map:
+                raise ValueError(f"指标 {report.metric_code} 的报表来源重复登记。")
+            report_map[report.metric_code] = report
         return cls(
-            metrics={metric.code: metric for metric in metrics},
-            dimensions={dim.code: dim for dim in dimensions},
+            metrics=metric_map,
+            dimensions=dimension_map,
             relations=tuple(relations),
             code_map=dict(code_map or {}),
+            reports=report_map,
         )
 
     def __bool__(self) -> bool:

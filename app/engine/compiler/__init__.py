@@ -29,8 +29,9 @@
 + 按拆分列聚合 + 差值列，禁止子查询（见 ``compiler/comparison.py``）。
 **已实现（M2.2）**：每月 Top N：月末聚合 + ROW_NUMBER 排名 + 外层筛选。
 **已实现（M2.3）**：受限双表 INNER/LEFT JOIN；关系、基数、字段与权限确定性绑定。
+**已实现（M2.4）**：显式报表来源、整月分区与逐分支权限检查、UNION ALL。
 **未实现（M2）**：同比 / 环比 / 比率、全局 Top N、多跳关联、
-报表 UNION 分支、占比、维度白名单类型检查。
+占比、维度白名单类型检查。
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ from app.engine.compiler.errors import (
 )
 from app.engine.compiler.metrics import bind_join_metric
 from app.engine.compiler.permissions import check_column_scope
+from app.engine.compiler.reports import compile_report
 from app.engine.compiler.sources import SourcePlan, dimension_level, resolve_sources
 from app.engine.compiler.time import build_point_condition, build_time_condition, month_end_range
 from app.engine.compiler.topn import resolve_monthly_topn, wrap_monthly_topn
@@ -73,8 +75,8 @@ def compile_intent(
     policy: ValidationPolicy | None = None,
     dialect: str = "sqlite",
     alias: str = "t1",
-) -> exp.Select:
-    """把一个 ``Intent`` 编译成 ``SELECT`` 语法树。
+) -> exp.Query:
+    """把一个 ``Intent`` 编译成 ``SELECT`` 或 ``UNION ALL`` 语法树。
 
     抛 :class:`CompileError`，``stage`` 说明该由谁修（见 ``errors.py``）。
     """
@@ -82,6 +84,8 @@ def compile_intent(
 
     # ① resolve —— 符号表查找
     metric = _resolve_metric(intent, catalog)
+    if intent.source_mode in {"report", "union"}:
+        return compile_report(intent, metric, catalog, scope=scope, alias=alias, dialect=dialect)
     sources = resolve_sources(intent, metric, catalog, scope=scope, alias=alias)
     table = sources.primary
 

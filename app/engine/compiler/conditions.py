@@ -23,7 +23,7 @@ from app.engine.compiler.sources import SourcePlan, dimension_level
 from app.engine.scope import RowPolicy, Scope
 from app.engine.semantic.catalog import SemanticCatalog
 from app.engine.semantic.dimension import DimensionDef
-from app.engine.semantic.models import Intent
+from app.engine.semantic.models import Filter, Intent
 
 
 def build_policy_conditions(
@@ -84,20 +84,27 @@ def build_business_conditions(
         column_alias = sources.alias_for(level.table) if sources is not None else alias
         column = exp.column(level.group_by, table=column_alias)
 
-        if item.operator == "in":
-            # 列表和单值都要支持：``in`` 只写一个值时退化成一个 EQ，形状更简单。
-            raw_values = tuple(raw_value) if isinstance(raw_value, (list, tuple, set)) else (raw_value,)
-            literals = [exp.Literal.string(_stored_value(catalog, dimension, value)) for value in raw_values]
-            if len(literals) == 1:
-                conditions.append(exp.EQ(this=column, expression=literals[0]))
-            else:
-                conditions.append(exp.In(this=column, expressions=literals))
-            continue
-
-        conditions.append(
-            exp.EQ(this=column, expression=exp.Literal.string(_stored_value(catalog, dimension, raw_value)))
-        )
+        conditions.append(build_filter_condition(item, catalog, dimension, column))
     return conditions
+
+
+def build_filter_condition(
+    item: Filter,
+    catalog: SemanticCatalog,
+    dimension: DimensionDef,
+    column: exp.Column,
+) -> exp.Expression:
+    """复用码值翻译与谓词构造；物理绑定和运算符边界由各来源编译器负责。"""
+    if item.operator == "in":
+        raw = item.value
+        values = tuple(raw) if isinstance(raw, (list, tuple, set)) else (raw,)
+        if not values:
+            return exp.EQ(this=exp.Literal.number(1), expression=exp.Literal.number(0))
+        literals = [exp.Literal.string(_stored_value(catalog, dimension, value)) for value in values]
+        if len(literals) == 1:
+            return exp.EQ(this=column, expression=literals[0])
+        return exp.In(this=column, expressions=literals)
+    return exp.EQ(this=column, expression=exp.Literal.string(_stored_value(catalog, dimension, item.value)))
 
 
 def _stored_value(catalog: SemanticCatalog, dimension: DimensionDef, raw_value: object) -> str:

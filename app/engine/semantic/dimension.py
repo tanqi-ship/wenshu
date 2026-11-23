@@ -29,7 +29,8 @@ class LevelDef:
 
     * ``group_by`` —— 用于 GROUP BY / WHERE 的稳定编号列（``org_no``）
     * ``display`` —— 需要展示时用的名称列（``org_nm``），**永远只出现在
-      ``MAX()`` 里，绝不进 GROUP BY**（规则 R-NAME-001）
+      ``MAX()`` 里，绝不进 GROUP BY**（规则 R-NAME-001）。
+      ReportDef 的唯一固定粒度分支例外：不聚合，直接投影展示列。
     """
 
     group_by: str

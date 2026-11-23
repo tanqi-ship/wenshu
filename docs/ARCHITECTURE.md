@@ -13,7 +13,7 @@
 | **L0** 输入边界 | `engine/semantic`, `Scope` | 配置数据 | `SemanticCatalog`, `Scope` | ❌ | 配置错误（启动时/加载时暴露） |
 | **L1** 理解 | `engine/clarify` + `llm/` | `question` | `Intent` | ✅ **1 次** | 抽不出 → 澄清 |
 | **L2** 门禁 | `engine/clarify/slots.py`, `engine/coverage/` | `Intent` + 语义层 + `Scope` | 编译 / 澄清 / 拒答 | ❌ | 槽位落不了地 → 澄清或拒答 |
-| **L3** 编译 | `engine/compiler/` | `Intent` + 语义层 + `Scope` | `exp.Select` → SQL | ❌ | `CompileError`（**确定性失败**） |
+| **L3** 编译 | `engine/compiler/` | `Intent` + 语义层 + `Scope` | `exp.Query`（Select / Union）→ SQL | ❌ | `CompileError`（**确定性失败**） |
 | **L4** 校验 | `engine/validation/` | SQL 文本 | `Problem[]` | ❌ | `Problem` 列表非空 |
 | **L5** 执行 | （待定，M3 之后） | SQL | `rows` | ❌ | 驱动异常 / 超时 |
 
@@ -33,6 +33,7 @@ SemanticCatalog:
     relations: tuple[RelationDef, ...]      # 表关系：左右表 / 左右列 / join_type / cardinality
     dimensions: Mapping[str, DimensionDef]  # 维度：编码 → 各口径/粒度的物理列（M1 引入）
     code_map:  Mapping[str, Mapping[str, str]]  # 维度值 → 数据库存储值
+    reports:   Mapping[str, ReportDef]       # 指标 → 预计算报表来源、固定维度和显式月份分表
 ```
 
 当前 `SemanticCatalog` 不持有表结构目录；物理表列名称由独立的校验 `Catalog` 管理。
@@ -103,8 +104,10 @@ source_mode  : plain | report | union
 
 ## 四、L3：编译器内部五步
 
+以下展开明细 plain 路径；报表路径在解析出业务指标后、明细来源解析之前分流，见 M2.4 小节。
+
 ```
-compile(intent, semantic, scope) -> exp.Select
+compile_intent(intent, semantic, scope) -> exp.Query
 │
 ├─ ① resolve   符号表查找
 │     metric = semantic.metric(intent.metric)          # 查不到 → UNKNOWN_METRIC
@@ -183,6 +186,31 @@ INNER 可规范化方向并同步反转基数；LEFT 只允许主表为声明左
 
 **基数不是数据检查**：编译器不读库；many_to_one 声明必须由维表键唯一约束或独立数据验证保证。
 不能靠 DISTINCT/任意 MAX 掩盖重复。见 ADR-0009 与 G-011~G-014；L4 仍只解析最终 SQL 文本。
+
+### 显式报表来源与多月合并（M2.4）
+
+`ReportDef(metric_code, value_column, month_column, dimensions, partitions)` 独立于明细公式。
+`SemanticCatalog.build(reports=...)` 在 L0 验证指标、维度、合法年月/标识符、无外部维度来源及输出名冲突；
+L3 再验证手工构造的目录，配置错误转 `REPORT_CONFIG_INVALID`。不保存 SQL，也不扫描/猜测表名。
+
+- `source_mode=report/union` 均进 `compiler/reports.py`；plain 完全沿用原路径。
+- `report_time.py` 将 month 日期锚点、真实 month_end 或月初到月末完整区间规范成排序、去重的 YYYYMM。
+  不混用点与区间，不接受日/季度/年度或部分月份；任一月份未登记即 `REPORT_PARTITION_MISSING`。
+- 请求维度按业务 code 去重后必须与报表粒度完全一致；即使已有过滤也不能省略维度或聚合预计算比例。
+  过滤只支持该粒度的 eq/in，共用码值转换；None 不过滤、空 IN 恒假，不借用明细列绑定。
+- 每个分支投影 `月份 AS stat_month`、请求顺序的维度编号/可选名称、`值列 AS metric.code`。
+  直接读取，不 SUM/AVG/MAX/GROUP BY/DISTINCT/COALESCE/*100，也不与 JOIN/对比/Top N 混用。
+- 逐表限定真实月份列；一月 Select，多月 `exp.Union(distinct=False)`，统一外层按 stat_month 和维度编号排序。
+  分支分别校验 FROM，不能要求 Union 根具有 FROM。返回类型拓宽到 Query，SQL 文本接口不变。
+
+**权限**：先解析全部物理来源并检查表权限，逐分支复用 `SourcePlan` 的单表字段接口、行策略和列白名单；
+不进入 JOIN 规划器，因此合法三个月 UNION 不受明细双表上限影响。只要求实际报表权限，不要求底层明细权限。
+任一表/列拒绝令整条失败；未用表策略忽略。空行策略保留分支的 `WHERE 1=0`，其他合法月份可返回数据。
+每个分支别名独立（默认 t1、t1_2、t1_3），防止独立 L4 的列名目录被后续分支覆盖。
+
+**知识/数据责任**：源表唯一键/外部数据检查保证每月每组只有一行，编译器不连接数据库证明唯一性或行数。
+同名列不是同一口径的证据；产品标准 npl_rate 的来源显式登记，不能替换为逾期口径表。
+G-015~G-018 以及 SQLite 结果验证这些边界；既有 G-001~G-014 不变。详见 ADR-0010。
 
 ### 错误分类（决定给谁看）
 
