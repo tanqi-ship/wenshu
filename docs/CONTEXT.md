@@ -3,7 +3,7 @@
 > **用途**：这是一份「换会话也不会丢背景」的交接文档。
 > 新会话/新同事进来，读这一份就能知道：我们在做什么、做到哪了、怎么跑、下一步做什么。
 >
-> 最后更新：2026-11-23，M2.2 每月 Top N 完成时。
+> 最后更新：2026-11-23，M2.3 受限双表 JOIN 完成时。
 
 ---
 
@@ -73,13 +73,14 @@
 | **M0** | 骨架 + LLM 边界（fake/replay/real）+ 校验层 6 条规则 + 澄清槽位 + fixture + 评测集 | ✅ 完成 |
 | **M1** | 语义层（指标/维度/码值/关系）+ **编译器最小闭环** + `Scope` 权限注入 | ✅ 完成 |
 | **M1.5** | 黄金集门禁：`scripts/golden.py`（归一化/比对）+ `scripts/check_golden.py`（CLI）+ `eval/golden/cases.yaml` + pytest 接线 | ✅ 完成 |
-| **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / **2.2 每月 Top N ✅** / 多表 JOIN / 报表 UNION / 占比 / 机构名等值 | 🟡 进行中（2/6） |
+| **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / **2.2 每月 Top N ✅** / **2.3 双表 JOIN ✅** / 报表 UNION / 占比 / 机构名等值 | 🟡 进行中（3/6） |
 | **M3** | `question → Intent`（LLM，首次引入模型）+ 澄清接线 + 只读执行 | ⬜ |
 | **M4** | 可答性门禁 + 黄金集扩到 30 条 + 评测报告 + 失败归因 | ⬜ |
 
 **现在能做什么**：给定一个结构化 `Intent`，产出**通过 6 条规则校验**的 SQL，**0 次模型调用**；
-并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，10 条用例 = 10/10，覆盖 9 种形状；281 项测试通过）。
-能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**、**每月 Top N**。
+并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，14 条用例 = 14/14，覆盖 13 种形状；398 项测试通过）。
+能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**、**每月 Top N**、**受限双表 INNER/LEFT JOIN**。
+双表首批只做事实表指标 + 唯一维表维度/过滤，不与 delta/Top N 混用。
 
 **现在还不能做什么**：**给一句人话，产出 SQL。** 因为 `question → Intent` 属于 M3。
 （想现在体验端到端，只能用 `scripts/demo_ask.py` 里的**临时桩**：固定问题 → 固定 Intent。）
@@ -89,7 +90,7 @@
 ## 五、架构一页纸
 
 ```
-L0 输入   语义层（知识：指标/维度/码值/表关系） + Scope（权限：表/行策略）
+L0 输入   语义层（知识：指标/维度/码值/表关系） + Scope（权限：表/列/行策略）
 L1 理解   question ──LLM──> Intent                  ← 唯一允许不确定的地方（M3）
 L2 门禁   槽位能否在语义层落地？→ 编译 / 澄清 / 拒答
 L3 编译   Intent + 语义层 + Scope → AST → SQL        ← 0 次模型（M1 已实现）
@@ -115,7 +116,7 @@ L5 执行   SQL → rows                               ← M3.4
 | **编译器** | 查语义层 + 拼 AST 的确定性代码，0 次模型调用 |
 | **AST** | SQL 解析成的语法树。在树上判断"有没有写操作""用了哪些表"，比字符串匹配可靠 |
 | **AST 强校验** | 在语法树上做检查（不是正则）。能保证"形状对"，保证不了"口径对" |
-| **Scope** | 本次提问的可见范围（表 / 行级策略）。**是编译器的第三个输入参数，不是权限系统** |
+| **Scope** | 本次提问的可见范围（表 / 列 / 行级策略）。**是编译器的第三个输入参数，不是权限系统** |
 | **覆盖率门禁** | 编译之前判断"语义层能支撑多少"，决定 编译 / 澄清 / 拒答 |
 | **黄金集** | 手写的标准 SQL。引擎产出必须与它结构等价。**不是引擎生成的**，否则只证明"没变" |
 | **fail-closed** | 出错时默认拒绝。例如行策略没有取值 → 生成恒假条件，而不是跳过 |
@@ -141,7 +142,7 @@ L5 执行   SQL → rows                               ← M3.4
 # 1) 环境（见第九节：需要先建 venv）
 uv sync --group dev            # 或 pip install -e . + dev 依赖
 
-# 2) 测试（纯内存，不需要数据库/模型/网络）
+# 2) 测试（含 SQLite 内存执行，不需要外部数据库/模型/网络）
 pytest
 
 # 3) lint
@@ -154,7 +155,7 @@ ruff check app scripts tests
 |---|---|---|
 | 单测 | `tests/engine/test_compiler_minimal.py`（14）、`test_business_filters.py`（6） | 规则对不对 |
 | 归一化 | `tests/engine/test_golden_compare.py`（21） | 比对器"该忽略什么、不该忽略什么" |
-| 黄金集门禁 | `tests/engine/test_golden_gate.py`（35） | 算得对不对 + **门禁自己会不会红** |
+| 黄金集门禁 | `tests/engine/test_golden_gate.py`（随用例参数化扩展） | 算得对不对 + **门禁自己会不会红** |
 
 另外 `scripts/trace_compile.py` 是学习工具：把编译器五步的中间产物逐个打出来
 （`uv run python -m scripts.trace_compile --trap` 还能现场演示 `from/from_` 那个坑）。
@@ -167,18 +168,18 @@ ruff check app scripts tests
 |---|---|
 | Python | ✅ **3.12.16**，由 `uv` 管理的独立副本（`C:\Users\EDY\AppData\Roaming\uv\python\...`），不动系统 Python |
 | 项目 venv | ✅ `.venv/` 已建立（`uv sync --group dev`），`uv.lock` 已生成 |
-| 数据库 | **不需要**。M1~M3 全是纯内存（ADR-0006）；L5 执行时才用 SQLite |
+| 数据库 | **不需要外部服务**。测试已含 SQLite 内存结果验证；L5 执行链仍待 M3.4 |
 | LLM | **不需要**。编译路径 0 次模型；M3 才引入，且 CI 用 replay 回放 |
 
 ### 怎么跑
 
 ```bash
 uv sync --group dev      # 建/更新 venv
-uv run pytest            # 213 passed（纯内存，不需要数据库/模型/网络）
+uv run pytest            # 398 passed（含 SQLite 内存测试，不需要外部数据库/模型/网络）
 uv run ruff check .      # All checks passed
 uv run ruff format --check .
 uv run python -m scripts.demo_ask       # 端到端演示（见下）
-uv run python -m scripts.check_golden   # 黄金集门禁（2/2 通过）
+uv run python -m scripts.check_golden   # 黄金集门禁（14/14 通过）
 ```
 
 ### 为什么用 uv 而不是手工 venv
@@ -203,7 +204,7 @@ uv run python -m scripts.check_golden   # 黄金集门禁（2/2 通过）
 
 **结论：不用 Docker 做开发环境。**
 Python 版本已由 `uv` 解决（`uv python install 3.12`，不动系统 Python）；
-数据库在 M1~M3 根本不需要（ADR-0006：默认 SQLite 文件）。
+M1~M3 不需要外部数据库服务；结果验证使用 SQLite 内存库，L5 执行链仍在 M3.4。
 
 `docker-compose.yml` 已按 ADR-0006 改好：**默认不启动任何服务**，
 `--profile pg` / `--profile oracle` 才按需启动。文件本身正确，只是当前拉不到镜像。
@@ -250,8 +251,13 @@ Python 版本已由 `uv` 解决（`uv python install 3.12`，不动系统 Python
 2. ~~**M2.2**：每月 Top N（`R-TOPN-001`）~~ ✅ **已完成**：`compiler/topn.py`
    + `eval/golden/G-010.sql` + `tests/engine/test_compiler_topn.py` + ADR-0008。
    月末聚合 → `ROW_NUMBER` 按月排名 → 外层取前 N；并列按主体编号升序，权限在聚合前注入。
-3. **下一步 M2.3**：多表 JOIN（`RelationDef` 驱动，≤2 表）；随后 M2.4~2.6：报表 UNION / 占比 / 机构名等值。
-4. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
+3. ~~**M2.3**：受限双表 JOIN~~ ✅ **已完成**：`compiler/sources.py` + `compiler/permissions.py`
+   + `G-011~G-014.sql` + `test_compiler_join.py`（92 项）+ ADR-0009。
+   `LevelDef.table` 明确维度来源，`RelationDef.cardinality` 声明基数；关系缺失/歧义/不安全即拒绝。
+   Scope 的表、列、行策略均生效，空 Scope 拒绝；LEFT 右表权限留在 WHERE，避免无权金额进入 NULL 分组。
+   AQ-007 保留单表核销语义，不硬绑定 JOIN。
+4. **下一步 M2.4**：报表分支（禁 JOIN，多报表 UNION ALL）；随后 M2.5~2.6：占比 / 机构名等值。
+5. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
    - `MetricDef.is_percentage`（`semantic/models.py`）目前**没有任何地方使用** → `unit="%"` 不会自动触发 `R-PCT-001`
    - `tests` job 里的 `scripts.seed_fixture` **已从 CI 移除**（它只支持 PostgreSQL，而 CI 给的是 `sqlite:///`）。
      脚本本身仍然只支持 PostgreSQL —— 等 M4 真的要验方言时再按 profile 处理（ADR-0006 未决项）

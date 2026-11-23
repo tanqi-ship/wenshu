@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import difflib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import sqlglot
@@ -44,7 +44,7 @@ from sqlglot.errors import ParseError
 from app.engine.compiler import CompileError, compile_sql
 from app.engine.scope import Scope, scope_from_mapping
 from app.engine.semantic.catalog import SemanticCatalog
-from app.engine.semantic.models import Intent, intent_from_mapping
+from app.engine.semantic.models import Intent, RelationDef, intent_from_mapping
 from app.engine.validation import validate_sql
 from app.engine.validation.catalog import Catalog
 
@@ -169,7 +169,9 @@ _CASE_ID_PATTERN = re.compile(r"^G-\d{3}$")
 #: 规则编号格式：``C-11``（业务规则）/ ``R-NAME-001``（规则码）/ ``D-07``（fixture 缺陷）
 _COVER_PATTERN = re.compile(r"^(C-\d{2}|R-[A-Z]+-\d{3}|D-\d{2})$")
 
-_CASE_KEYS = frozenset({"id", "shape", "intent", "scope", "golden", "covers", "eval_case", "why_hard"})
+_CASE_KEYS = frozenset(
+    {"id", "shape", "intent", "scope", "relations", "golden", "covers", "eval_case", "why_hard"}
+)
 _REQUIRED_CASE_KEYS = ("id", "shape", "intent", "golden")
 
 
@@ -202,6 +204,8 @@ class GoldenCase:
     eval_case: str = ""
     #: 为什么容易错。写不出来，说明这条用例测不出东西。
     why_hard: str = ""
+    #: None 沿用共用 L0；空元组显式无关系。不是 Intent 的 SQL 指令。
+    relations: tuple[RelationDef, ...] | None = None
 
     @property
     def golden_sql(self) -> str:
@@ -308,6 +312,7 @@ def cases_from_payload(
                 covers=covers,
                 eval_case=str(item.get("eval_case") or "").strip(),
                 why_hard=str(item.get("why_hard") or "").strip(),
+                relations=_case_relations(item["relations"], case_id) if "relations" in item else None,
             )
         )
 
@@ -318,6 +323,32 @@ def cases_from_payload(
         raise GoldenConfigError(f"{source} 没有登记这些黄金 SQL：{', '.join(orphans)}")
 
     return cases
+
+
+def _case_relations(raw: object, case_id: str) -> tuple[RelationDef, ...]:
+    """用例级 L0 配置：对照同一关系的 INNER/LEFT，不改共用语义层。"""
+    if not isinstance(raw, list):
+        raise GoldenConfigError(f"{case_id} 的 relations 必须是关系列表。")
+    result = []
+    fields = {"left_table", "left_column", "right_table", "right_column"}
+    allowed = fields | {"join_type", "cardinality"}
+    for item in raw:
+        if not isinstance(item, dict) or set(item) - allowed or not fields <= set(item):
+            raise GoldenConfigError(f"{case_id} 的 relations 存在缺字段、未知键或非映射项。")
+        if any(not isinstance(item[key], str) or not item[key].strip() for key in fields):
+            raise GoldenConfigError(f"{case_id} 的 relations 表名和列名必须是非空字符串。")
+        if item.get("join_type", "INNER") not in ("INNER", "LEFT", "RIGHT"):
+            raise GoldenConfigError(f"{case_id} 的 relations.join_type 非法。")
+        if item.get("cardinality", "unknown") not in (
+            "unknown",
+            "one_to_one",
+            "many_to_one",
+            "one_to_many",
+            "many_to_many",
+        ):
+            raise GoldenConfigError(f"{case_id} 的 relations.cardinality 非法。")
+        result.append(RelationDef(**item))
+    return tuple(result)
 
 
 def load_eval_case_ids(cases_dir: str | Path) -> list[str]:
@@ -384,6 +415,8 @@ def evaluate_case(
     编译器的 scope 决定**注入了哪些条件**，校验器的 scope 决定**表在不在可见范围**。
     两处用的是同一个值，但检查的是两件不同的事（ADR-0004 的第三层纵深）。
     """
+    if case.relations is not None:
+        semantic = replace(semantic, relations=case.relations)
     try:
         produced = compile_sql(case.intent, semantic, scope=case.scope, dialect=dialect)
     except CompileError as exc:

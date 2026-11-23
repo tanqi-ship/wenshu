@@ -18,21 +18,29 @@ from __future__ import annotations
 
 from sqlglot import exp
 
-from app.engine.compiler.errors import UNKNOWN_CODE, UNKNOWN_DIMENSION, CompileError
+from app.engine.compiler.errors import JOIN_FILTER_UNSUPPORTED, UNKNOWN_CODE, CompileError
+from app.engine.compiler.sources import SourcePlan, dimension_level
 from app.engine.scope import RowPolicy, Scope
 from app.engine.semantic.catalog import SemanticCatalog
 from app.engine.semantic.dimension import DimensionDef
 from app.engine.semantic.models import Intent
 
 
-def build_policy_conditions(scope: Scope | None, *, alias: str) -> list[exp.Expression]:
+def build_policy_conditions(
+    scope: Scope | None, *, alias: str, sources: SourcePlan | None = None
+) -> list[exp.Expression]:
     """权限条件。**fail-closed**：一条策略没有取值时生成恒假条件，而不是跳过。"""
     if scope is None or not scope.row_policies:
         return []
 
     conditions: list[exp.Expression] = []
     for row_policy in scope.row_policies:
-        conditions.append(_policy_condition(row_policy, alias=alias))
+        policy_alias = alias
+        if sources is not None:
+            policy_alias = sources.aliases.get(row_policy.table.casefold())
+            if policy_alias is None:
+                continue  # 非本次查询的表，不能为应用策略而偷偷新增关联。
+        conditions.append(_policy_condition(row_policy, alias=policy_alias))
     return conditions
 
 
@@ -55,6 +63,7 @@ def build_business_conditions(
     catalog: SemanticCatalog,
     *,
     alias: str,
+    sources: SourcePlan | None = None,
 ) -> list[exp.Expression]:
     """业务过滤条件。
 
@@ -64,24 +73,16 @@ def build_business_conditions(
     """
     conditions: list[exp.Expression] = []
     for item in intent.filters:
-        dimension = catalog.dimension(item.dimension)
-        if dimension is None:
-            raise CompileError(
-                "symbol_table",
-                UNKNOWN_DIMENSION,
-                f"语义层里没有维度「{item.dimension}」。",
-            )
-
-        try:
-            _level_key, level = dimension.resolve_level()
-        except KeyError as exc:
-            raise CompileError("intent", "DIMENSION_LEVEL_UNRESOLVED", str(exc)) from exc
-
         raw_value = item.value
         if raw_value is None:
             continue
-
-        column = exp.column(level.group_by, table=alias)
+        dimension, level = dimension_level(catalog, item.dimension)
+        if sources is not None and sources.joined and item.operator not in {"eq", "in"}:
+            raise CompileError(
+                "intent", JOIN_FILTER_UNSUPPORTED, "双表过滤当前只支持 eq/in，不自动降级运算符。"
+            )
+        column_alias = sources.alias_for(level.table) if sources is not None else alias
+        column = exp.column(level.group_by, table=column_alias)
 
         if item.operator == "in":
             # 列表和单值都要支持：``in`` 只写一个值时退化成一个 EQ，形状更简单。

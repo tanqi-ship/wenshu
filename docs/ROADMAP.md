@@ -33,7 +33,7 @@
 | 1.1 | `DimensionDef` + `LevelDef` 数据模型 | ✅ | `semantic/dimension.py` |
 | 1.2 | `compile()` 第一路：单指标 + `month_end` + 无维度 | ✅ | `compiler/__init__.py`；黄金集 `eval/golden/G-001.sql` |
 | 1.3 | 维度分组（GROUP BY 编号列 + `MAX(名称列)`） | ✅ | `compiler/__init__.py::_dimension_items`；`R-NAME-001` 不触发 |
-| 1.4 | `Scope` 三注入点（表 / 列 / 行级 WHERE） | ✅ 表+行级；列白名单 M2 | `engine/scope.py` + `compiler/conditions.py` |
+| 1.4 | `Scope` 三注入点（表 / 列 / 行级 WHERE） | ✅ 表/列/行；列白名单于 M2.3 补齐 | `engine/scope.py` + `compiler/conditions.py` |
 | 1.5 | 黄金集门禁（替代双引擎） | ✅ | `scripts/golden.py` + `scripts/check_golden.py` + `eval/golden/cases.yaml` |
 | — | 语义层容器 `SemanticCatalog` | ✅ 额外完成 | `semantic/catalog.py` |
 | — | 编译错误五分类（stage + 稳定 code） | ✅ 额外完成 | `compiler/errors.py` |
@@ -97,14 +97,14 @@ assert result.problems == []
 |---|---|---|---|---|
 | 2.1 | 双时点对比 `delta`（同一 SELECT + `CASE WHEN` 分段聚合） | `R-COMP-001` | AQ-004 | ✅ **完成** |
 | 2.2 | 每月 Top N（窗口函数 + 外层过滤） | `R-TOPN-001` | AQ-008 | ✅ **完成** |
-| 2.3 | 多表 JOIN（`RelationDef` 驱动，≤2 表） | `R-TBL-001` | AQ-007 | ⬜ |
+| 2.3 | 受限双表 JOIN（`RelationDef` 驱动，≤2 表） | `R-TBL-001` | G-011~G-014（AQ-007 为单表反例） | ✅ **完成** |
 | 2.4 | 报表分支（禁 JOIN，多报表 `UNION ALL`） | `R-JOIN-001` | AQ-006 | ⬜ |
 | 2.5 | 占比（分子 + 分母是整体） | 新增 `R-RATIO-001` | — | ⬜ |
 | 2.6 | 机构名等值匹配（禁 LIKE / 前缀 / 包含） | 新增 `R-ORG-001` | — | ⬜ |
 
 **验收**：7 种形状各有 1 条黄金集用例通过；`rules.py` 8 条规则全有单测。
 
-**预期规模**：每种形状约 30~40 行 + 1 个单测，总增约 250 行。
+**规模纪律**：以完整的配置边界、黄金 SQL 和正反例验收为准，不为满足早期行数估计省略权限或失败检查。
 
 ### M2.1 落地记录（2026-11-20）
 
@@ -146,6 +146,31 @@ assert result.problems == []
 输出列冲突报 `type_check/TOPN_OUTPUT_COLLISION`，时间缺失沿用 `TIME_UNRESOLVED`。
 
 **验收结果**：281 项测试通过；黄金集 10/10；Ruff 检查通过。下一步是 **M2.3 多表 JOIN**。
+
+### M2.3 落地记录（2026-11-23）
+
+| 交付 | 位置 |
+|---|---|
+| 关系与来源绑定 | `compiler/sources.py`：有效依赖、两表上限、唯一关系、方向/基数与别名 |
+| 物理列权限 | `compiler/permissions.py`：在外层包装前检查全部实际列引用 |
+| 语义配置 | `LevelDef.table`（默认主表）、`RelationDef.cardinality`（默认 unknown） |
+| 条件/公式接线 | `conditions.py` 按表绑定业务/行级策略；`metrics.py` 严格表达式解析与主表指标绑定 |
+| 黄金 SQL | `G-011` INNER / `G-012` LEFT / `G-013` 两表过滤与权限 / `G-014` LEFT 右表空权限 |
+| 黄金集配置 | 可选 `relations` 是用例级 L0 配置，严格加载、不可污染共用语义层 |
+| 单测 | `test_compiler_join.py`（92 项）：结构、SQLite 结果与稳定错误码 |
+| 决策 | ADR-0009；已确认设计和实施计划位于 `docs/superpowers/` |
+
+**边界**：只支持从主事实表到唯一维表的一对一/多对一 INNER/LEFT，关联表只提供维度和过滤。
+关系缺失、歧义、未知/不安全基数、三表、反向 LEFT、跨表度量及 delta/Top N/report/union 组合均显式拒绝。
+基数是语义层声明，不等于检查过真实数据；测试用主键约束，并用无约束重复数据反例揭示金额放大。
+
+**权限契约补齐**：未传 Scope 不限制，显式空 Scope 在 L3/L4 都拒绝。
+列白名单约束指标、时间、维度、名称、过滤、JOIN 键与行策略列，单表也适用；
+行策略按物理表绑定，未参与表的策略不引入额外表。LEFT 右表权限放 WHERE，不把无权金额重归为 NULL 分组。
+
+**纠正用例对应**：AQ-007 是单表核销查询，不是 JOIN 正例，本次保持其语义不变。
+**验收**：398 项测试通过，14/14 黄金用例通过（13 类形状），原 G-001~G-010 不变；Ruff 检查通过。
+下一步是 **M2.4 报表分支 / UNION ALL**，M2 当前完成 3/6。
 
 ---
 

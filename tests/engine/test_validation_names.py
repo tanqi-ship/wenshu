@@ -117,15 +117,13 @@ class TestScope:
         )
         assert result.ok, result.feedback()
 
-    def test_empty_scope_does_not_restrict(self, catalog: Catalog) -> None:
-        """空 Scope 表示"未限定"，不是"什么都不许用"。
-
-        否则忘记传 scope 会把所有查询都判死，调试时非常难查。
-        """
+    def test_empty_scope_denies_all_tables(self, catalog: Catalog) -> None:
+        """不传 Scope 不限制；显式空 Scope 表示没有可见表，L3/L4 契约一致。"""
         result = validate_sql(
             "SELECT SUM(current_balnc_cny) FROM qa_loan_acc_detail",
             catalog=catalog,
             dialect=DIALECT,
             scope=Scope(),
         )
-        assert result.ok, result.feedback()
+        assert not result.ok
+        assert "TABLE_NOT_IN_SCOPE" in result.codes

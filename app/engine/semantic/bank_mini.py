@@ -23,11 +23,13 @@ from __future__ import annotations
 
 from app.engine.semantic.catalog import SemanticCatalog
 from app.engine.semantic.dimension import DimensionDef, LevelDef
-from app.engine.semantic.models import MetricDef
+from app.engine.semantic.models import MetricDef, RelationDef
 from app.engine.validation.catalog import Catalog
 
 #: 主表。与 ``fixtures/sql/bank_fixture.sql`` 里的表同名（那份才是真实 schema）。
 TABLE = "qa_loan_acc_detail"
+ORG_TABLE = "dim_org"
+ORG_COLUMNS = ("org_no", "org_nm", "parent_org_no", "org_level", "org_type")
 
 #: 语义层里登记过的列。刻意**不**包含表里的全部列 ——
 #: 语义层只登记"业务认识"的列，这正是它与表结构解耦的地方。
@@ -45,7 +47,7 @@ TABLE_COLUMNS: tuple[str, ...] = (
 
 
 def semantic_catalog() -> SemanticCatalog:
-    """三个指标 + 两个维度，覆盖了 M1 支持的全部形状。"""
+    """三个指标 + 三个维度 + 一条多对一关系；旧维度不自动改来源。"""
     return SemanticCatalog.build(
         metrics=[
             MetricDef(
@@ -102,7 +104,15 @@ def semantic_catalog() -> SemanticCatalog:
                 default_level="default",
                 synonyms=("贷款产品", "产品类型"),
             ),
+            DimensionDef(
+                code="parent_org",
+                name="上级机构",
+                levels={"default": LevelDef(group_by="parent_org_no", table=ORG_TABLE)},
+                default_level="default",
+                synonyms=("上级行",),
+            ),
         ],
+        relations=[RelationDef(TABLE, "org_no", ORG_TABLE, "org_no", cardinality="many_to_one")],
         code_map={
             # 维度值 → 数据库存储值。**没有配置的维度，值会原样透传**。
             # 这正是 fixture 缺陷 D-06 的坑：机构名是高基数值，
@@ -127,4 +137,4 @@ def validation_catalog() -> Catalog:
     刻意让 schema 是 ``public``：校验器保留 schema 这一层，
     同名表出现在不同 schema 时要求写全限定名，而不是靠 search_path 猜。
     """
-    return Catalog.from_mapping({"public": {TABLE: list(TABLE_COLUMNS)}})
+    return Catalog.from_mapping({"public": {TABLE: list(TABLE_COLUMNS), ORG_TABLE: list(ORG_COLUMNS)}})

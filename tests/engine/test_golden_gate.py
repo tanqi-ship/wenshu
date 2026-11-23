@@ -289,3 +289,82 @@ def test_gate_checks_intent_even_when_wrong_sql_matches_golden(tmp_path: Path, m
     assert outcome.matches
     assert not outcome.ok
     assert "TOPN_MISSING_WINDOW" in outcome.validation_codes
+
+
+@pytest.mark.parametrize(
+    "relations",
+    [
+        None,
+        {},
+        "LEFT",
+        ["not a mapping"],
+        [{}],
+        [
+            {
+                "left_table": "loans",
+                "left_column": "org_no",
+                "right_table": "org",
+                "right_column": "org_no",
+                "typo": "LEFT",
+            }
+        ],
+        [{"left_table": "", "left_column": "org_no", "right_table": "org", "right_column": "org_no"}],
+        [{"left_table": ["loans"], "left_column": "org_no", "right_table": "org", "right_column": "org_no"}],
+        [
+            {
+                "left_table": "loans",
+                "left_column": "org_no",
+                "right_table": "org",
+                "right_column": "org_no",
+                "join_type": "OUTER",
+            }
+        ],
+        [
+            {
+                "left_table": "loans",
+                "left_column": "org_no",
+                "right_table": "org",
+                "right_column": "org_no",
+                "cardinality": "guess",
+            }
+        ],
+    ],
+)
+def test_golden_relation_configuration_is_fail_closed(tmp_path: Path, relations) -> None:
+    (tmp_path / "G-900.sql").write_text("SELECT 1", encoding="utf-8")
+    with pytest.raises(GoldenConfigError, match="relations"):
+        cases_from_payload(_payload(relations=relations), directory=tmp_path)
+
+
+def test_empty_relations_override_is_not_confused_with_default_catalog(tmp_path: Path) -> None:
+    reference = next(case for case in CASES if case.id == "G-011")
+    path = tmp_path / "G-900.sql"
+    path.write_text(reference.golden_sql, encoding="utf-8")
+    payload = _payload(
+        intent={
+            "metric": "贷款余额",
+            "time": {"grain": "month_end", "points": ["2026-04-30"]},
+            "dimensions": ["上级机构"],
+        },
+        relations=[],
+    )
+    case = cases_from_payload(payload, directory=tmp_path)[0]
+    assert case.relations == ()
+    outcome = evaluate_case(case, semantic_catalog(), validation_catalog())
+    assert outcome.compile_error == "symbol_table/JOIN_RELATION_MISSING"
+
+
+def test_relation_overrides_do_not_mutate_shared_semantic_catalog() -> None:
+    semantic = semantic_catalog()
+    inner = next(case for case in CASES if case.id == "G-011")
+    left = next(case for case in CASES if case.id == "G-012")
+    assert evaluate_case(left, semantic, validation_catalog()).ok
+    assert semantic.relations[0].join_type == "INNER"
+    assert evaluate_case(inner, semantic, validation_catalog()).ok
+
+
+def test_left_golden_detects_ignored_relation_override() -> None:
+    left = next(case for case in CASES if case.id == "G-012")
+    ignored = replace(left, relations=None)
+    outcome = evaluate_case(ignored, semantic_catalog(), validation_catalog())
+    assert not outcome.matches and not outcome.ok

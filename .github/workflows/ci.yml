@@ -58,7 +58,7 @@ jobs:
       # 回放模式下找不到 cassette 必须硬失败，而不是回落到真实调用
       WENSHU_LLM_STRICT_REPLAY: "1"
       # 刻意不设 WENSHU_FIXTURE_URL：M1~M3 的编译器与校验层是纯函数，
-      # 全仓没有任何用例连接数据库（ADR-0006）。设了它反而会诱导后面的人
+      # 默认测试只使用进程内 SQLite，不连接外部数据库（ADR-0006）。设了它反而会诱导后面的人
       # 写"顺手灌个库"的步骤，而那一步需要 PG 专有语句。
 
     steps:
@@ -77,7 +77,7 @@ jobs:
         # 谁改了 pyproject 却忘了更新锁文件，这一步会直接失败而不是悄悄升级。
         run: uv sync --locked --group dev
 
-      # 刻意不灌 fixture：这一 job 跑的是纯内存用例，一行 SQL 都不连库。
+      # 刻意不灌 fixture：这一 job 只跑纯内存用例，含 SQLite 内存结果验证。
       # fixtures/sql/bank_fixture.sql 是 PostgreSQL 方言（COMMENT ON / numeric(...)），
       # 塞不进 sqlite:/// —— 真需要数据库的用例打 @pytest.mark.db，
       # 由下面 tests-db 这个非阻塞 job 负责（M4 验方言时才启用）。

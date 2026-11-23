@@ -307,6 +307,8 @@ class RelationDef:
     right_table: str
     right_column: str
     join_type: Literal["INNER", "LEFT", "RIGHT"] = "INNER"
+    #: 相对 left → right 的基数；声明不代替实际数据的唯一约束。
+    cardinality: Literal["unknown", "one_to_one", "many_to_one", "one_to_many", "many_to_many"] = "unknown"
 
     def connects(self, left: str, right: str) -> bool:
         pair = {self.left_table.lower(), self.right_table.lower()}

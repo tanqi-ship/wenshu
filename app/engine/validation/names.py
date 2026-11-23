@@ -75,7 +75,7 @@ def check_tables(
             )
             continue
 
-        if scope is not None and scope and not scope.allows(name, schema):
+        if scope is not None and not scope.allows(name, schema):
             problems.append(
                 Problem(
                     code="TABLE_NOT_IN_SCOPE",

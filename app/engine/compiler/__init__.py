@@ -28,7 +28,8 @@
 **已实现（M2.1）**：双时点对比 ``delta`` —— 一个 SELECT 内 ``WHERE etl_dt IN (...)``
 + 按拆分列聚合 + 差值列，禁止子查询（见 ``compiler/comparison.py``）。
 **已实现（M2.2）**：每月 Top N：月末聚合 + ROW_NUMBER 排名 + 外层筛选。
-**未实现（M2）**：同比 / 环比 / 比率、全局 Top N、多表 JOIN、
+**已实现（M2.3）**：受限双表 INNER/LEFT JOIN；关系、基数、字段与权限确定性绑定。
+**未实现（M2）**：同比 / 环比 / 比率、全局 Top N、多跳关联、
 报表 UNION 分支、占比、维度白名单类型检查。
 """
 
@@ -40,14 +41,14 @@ from app.engine.compiler.comparison import build_metric_projections, resolve_com
 from app.engine.compiler.conditions import build_business_conditions, build_policy_conditions
 from app.engine.compiler.errors import (
     AST_INVALID,
-    METRIC_OUT_OF_SCOPE,
-    UNKNOWN_DIMENSION,
+    JOIN_OUTPUT_COLLISION,
     UNKNOWN_METRIC,
-    UNKNOWN_SOURCE,
     CompileError,
     CompileStage,
 )
-from app.engine.compiler.metrics import qualify_columns
+from app.engine.compiler.metrics import bind_join_metric
+from app.engine.compiler.permissions import check_column_scope
+from app.engine.compiler.sources import SourcePlan, dimension_level, resolve_sources
 from app.engine.compiler.time import build_point_condition, build_time_condition, month_end_range
 from app.engine.compiler.topn import resolve_monthly_topn, wrap_monthly_topn
 from app.engine.scope import Scope
@@ -81,7 +82,8 @@ def compile_intent(
 
     # ① resolve —— 符号表查找
     metric = _resolve_metric(intent, catalog)
-    table = _primary_table(metric, catalog, scope)
+    sources = resolve_sources(intent, metric, catalog, scope=scope, alias=alias)
+    table = sources.primary
 
     # ② check —— 每月序列与多时点对比是两种形状，先校验再造节点。
     #    Top N 的时点用于逐月分组；只有对比时点才用于分段聚合。
@@ -105,8 +107,8 @@ def compile_intent(
             dialect=dialect,
         )
     conditions: list[exp.Expression] = [time_condition]
-    conditions.extend(build_business_conditions(intent, catalog, alias=alias))
-    conditions.extend(build_policy_conditions(scope, alias=alias))
+    conditions.extend(build_business_conditions(intent, catalog, alias=alias, sources=sources))
+    conditions.extend(build_policy_conditions(scope, alias=alias, sources=sources))
 
     metric_projections = build_metric_projections(
         metric,
@@ -117,7 +119,12 @@ def compile_intent(
         dialect=dialect,
     )
 
-    dimension_items = _dimension_items(intent, catalog, alias=alias)
+    if sources.joined:
+        metric_projections = [
+            bind_join_metric(p, primary=table, secondary=sources.tables[1], alias=alias)
+            for p in metric_projections
+        ]
+    dimension_items = _dimension_items(intent, catalog, sources=sources)
 
     # ④ assemble —— 填 4 个空
     projections: list[exp.Expression] = []
@@ -143,8 +150,15 @@ def compile_intent(
             "where": exp.Where(this=_combine(conditions)),
         },
     )
+    join = sources.join_expression()
+    if join is not None:
+        select.set("joins", [join])
+        names = [projection.alias_or_name.casefold() for projection in projections]
+        if len(set(names)) != len(names):
+            raise CompileError("type_check", JOIN_OUTPUT_COLLISION, "双表查询存在重名输出列，不能静默覆盖。")
     if group_columns:
         select = select.group_by(*group_columns)
+    check_column_scope(select, scope, sources)
 
     if monthly_points is not None:
         select = wrap_monthly_topn(
@@ -205,36 +219,11 @@ def _resolve_metric(intent: Intent, catalog: SemanticCatalog) -> MetricDef:
     return metric
 
 
-def _primary_table(
-    metric: MetricDef,
-    catalog: SemanticCatalog,
-    scope: Scope | None,
-) -> str:
-    tables = catalog.metric_tables(metric)
-    if not tables:
-        raise CompileError(
-            "symbol_table",
-            UNKNOWN_SOURCE,
-            f"指标「{metric.name}」没有配置来源表。",
-        )
-
-    primary = tables[0]
-
-    # ② check（范围部分）—— 越权必须在编译期就拒绝，不能等到执行
-    if scope and not scope.allows(primary):
-        raise CompileError(
-            "scope",
-            METRIC_OUT_OF_SCOPE,
-            f"指标「{metric.name}」的来源表 {primary} 不在当前可见范围内。",
-        )
-    return primary
-
-
 def _dimension_items(
     intent: Intent,
     catalog: SemanticCatalog,
     *,
-    alias: str,
+    sources: SourcePlan,
 ) -> list[tuple[exp.Column, exp.Expression | None]]:
     """维度 -> (GROUP BY 列, 名称投影或 None)。
 
@@ -245,21 +234,11 @@ def _dimension_items(
     seen: set[str] = set()
 
     for name in intent.dimensions:
-        dimension = catalog.dimension(name)
-        if dimension is None:
-            raise CompileError(
-                "symbol_table",
-                UNKNOWN_DIMENSION,
-                f"语义层里没有维度「{name}」。",
-            )
+        dimension, level = dimension_level(catalog, name)
         if dimension.code in seen:
             continue
         seen.add(dimension.code)
-
-        try:
-            _level_key, level = dimension.resolve_level()
-        except KeyError as exc:
-            raise CompileError("intent", "DIMENSION_LEVEL_UNRESOLVED", str(exc)) from exc
+        alias = sources.alias_for(level.table)
 
         group_column = exp.column(level.group_by, table=alias)
         display_projection: exp.Expression | None = None
@@ -281,7 +260,3 @@ def _combine(conditions: list[exp.Expression]) -> exp.Expression:
     for extra in conditions[1:]:
         combined = exp.And(this=combined, expression=extra)
     return combined
-
-
-# ``qualify_columns`` 目前只在 metrics 内部使用；这里 re-export 便于 M2 的 JOIN 复用。
-_ = qualify_columns

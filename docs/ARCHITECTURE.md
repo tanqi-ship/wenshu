@@ -30,11 +30,13 @@
 ```python
 SemanticCatalog:
     metrics:   Mapping[str, MetricDef]      # 指标：code / name / formula / unit / source_tables / synonyms
-    tables:    Mapping[str, TableDef]       # 表：列清单 + 每列的 role / semantic_dimension_code
-    relations: tuple[RelationDef, ...]      # 表关系：左右表 / 左右列 / join_type
+    relations: tuple[RelationDef, ...]      # 表关系：左右表 / 左右列 / join_type / cardinality
     dimensions: Mapping[str, DimensionDef]  # 维度：编码 → 各口径/粒度的物理列（M1 引入）
     code_map:  Mapping[str, Mapping[str, str]]  # 维度值 → 数据库存储值
 ```
+
+当前 `SemanticCatalog` 不持有表结构目录；物理表列名称由独立的校验 `Catalog` 管理。
+`LevelDef.table` 留空表示指标主表；非空时明确关联维度的来源物理表。
 
 **`DimensionDef` 是 askdb 缺失的那块，也是本项目相对它最重要的新增。** 它的形状：
 
@@ -71,6 +73,8 @@ class Scope:
 ```
 
 **`Scope` 是传进来的，引擎不查 RBAC**（ADR-0004）。测试里直接构造，生产里由调用方填。
+`scope=None` 表示不限制；显式 `Scope()` 表示没有可见表，L3/L4 均拒绝。
+列白名单未配置某表时不限制该表，显式空集合表示一列都不可见。
 
 ---
 
@@ -155,6 +159,30 @@ compile(intent, semantic, scope) -> exp.Select
 多个维度表示对维度组合排名；目前仅支持 plain 分支，每月 Top N 不能与 comparison 混用。
 输出列重名或占用内部排名列 `rn` 时显式报错。
 具体取舍见 ADR-0008，手写黄金 SQL 见 `eval/golden/G-010.sql`。
+
+### 受限双表关联（M2.3）
+
+`compiler/sources.py` 收集指标来源与实际使用的维度/非空值过滤来源，
+最多两表；主表固定为指标第一来源，默认别名 t1/t2（自定义主表别名不与关联别名冲突）。
+两表之间必须恰好一条关系，不能用 `relation_between` 取第一条来掩盖歧义。
+INNER 可规范化方向并同步反转基数；LEFT 只允许主表为声明左侧。
+有效方向须为 many_to_one/one_to_one；未知、一对多、多对多均拒绝。
+
+指标只读主表；分组和业务过滤按 `LevelDef.table` 绑定，名称只 MAX。
+只用于过滤的关联维度也会引入 JOIN，值为 None 的过滤不引入多余表。
+时间仍约束主表快照；本轮不支持双表与 delta/Top N/report/union 组合。
+公式必须是单个表达式，不能夹带 FROM/WHERE/第二条语句；双表公式不能引用关联表度量或未知限定名。
+
+表权限检查覆盖所有实际参与表；`compiler/permissions.py` 在聚合查询装配完成、Top N 包装之前，
+检查指标、维度、名称、时间、业务过滤、JOIN 键与行策略引用的物理列。显式列限制下不接受通配符指标。
+行策略根据 RowPolicy.table 绑定别名；未使用表的策略不生效也不引入表，原策略顺序保持不变。
+
+**LEFT 的安全语义**：ON 只放关系键；业务过滤和行级权限都在 WHERE。
+无右表限制时保留未匹配主表行到 NULL 分组；有右表筛选或权限时，这些行会被排除。
+右表空策略生成 WHERE 1 = 0，不能只放 ON 后继续汇总无权主表金额。
+
+**基数不是数据检查**：编译器不读库；many_to_one 声明必须由维表键唯一约束或独立数据验证保证。
+不能靠 DISTINCT/任意 MAX 掩盖重复。见 ADR-0009 与 G-011~G-014；L4 仍只解析最终 SQL 文本。
 
 ### 错误分类（决定给谁看）
 

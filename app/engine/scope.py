@@ -40,6 +40,7 @@ class RowPolicy:
 class Scope:
     """本次提问允许使用的表和列。
 
+    不传 Scope 表示不限制；显式空 Scope 表示没有可见表，编译器和校验器均拒绝。
     ``columns`` 为空表示**不限制列**（与"限制成空集"不同）。
     需要"一个列都看不到"时请显式传 ``{"t": frozenset()}``。
     """
@@ -59,7 +60,10 @@ class Scope:
     ) -> Scope:
         return cls(
             tables=frozenset(name.lower() for name in names if name),
-            columns={key.lower(): value for key, value in (columns or {}).items()},
+            columns={
+                key.lower(): frozenset(name.lower() for name in value)
+                for key, value in (columns or {}).items()
+            },
             row_policies=row_policies,
         )
 

@@ -17,6 +17,7 @@
 #   eval_case  对应的评测用例编号。用于交叉检查"哪些评测用例还没有黄金对照"。
 #              **没有对应项就留空**，不要硬凑 —— 硬凑的对照会掩盖差异。
 #   covers     覆盖的业务规则编号（C-xx / R-xxx / D-xx）。
+#   relations  用例级 L0 关系（左右表/列/类型/基数），省略沿用目录，空列表表示无关系。
 #
 # 纪律：每加一种 SQL 形状，必须同时交三样 = 黄金 SQL + 单测 + covers 标注。
 #
@@ -234,3 +235,104 @@
     ② 余额相同时按机构编号升序打破并列，ROW_NUMBER 保证每月最多 N 个主体。
     ③ 只选月末快照，名称只做 MAX；月中快照不能累加进来。
     ④ 三月快照缺失时不回退二月、不补零；返回实际存在的月份。
+
+# M2.3：关系属于 L0，不让 Intent 接受 JOIN 语法。
+# relations 可选：省略沿用共用目录；配置后完整替换本用例的关系，不修改共用目录。
+# 不对应 AQ-007：那条核销查询只需要单表，强行 JOIN 会改变原问题语义。
+- id: G-011
+  shape: join_inner
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [上级机构]
+  golden: G-011.sql
+  covers: [R-TBL-001, C-04, R-NAME-001]
+  why_hard: |
+    指标取贷款表，分组取机构维表的上级编号；两个表可能有同名列，别名不能串表。
+    关系由显式多对一配置确定，维表键唯一是前提，不凭“有 ON 条件”就认为不会放大金额。
+    同机构多笔贷款各计一次，无匹配维表机构的贷款由 INNER 排除。
+
+- id: G-012
+  shape: join_left
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [上级机构]
+  relations:
+    - left_table: qa_loan_acc_detail
+      left_column: org_no
+      right_table: dim_org
+      right_column: org_no
+      join_type: LEFT
+      cardinality: many_to_one
+  golden: G-012.sql
+  covers: [R-TBL-001, C-04, R-NAME-001]
+  why_hard: |
+    没有机构维表匹配的贷款必须保留到 NULL 上级分组，不能偷偷改成 INNER。
+    同一对表的 JOIN 类型来自用例的 L0 配置，不是 Intent 指令；该配置不能污染后续用例。
+    不需要查询上级名称，不能为了展示名称再加第三张表或自关联。
+
+- id: G-013
+  shape: join_filters_and_policies
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [上级机构]
+    filters:
+      - dimension: 机构
+        value: 渝北支行
+      - dimension: 上级机构
+        operator: in
+        value: [F001, F002]
+  scope:
+    tables: [qa_loan_acc_detail, dim_org]
+    columns:
+      qa_loan_acc_detail: [etl_dt, org_no, current_balnc_cny]
+      dim_org: [org_no, parent_org_no, org_type]
+    row_policies:
+      - table: dim_org
+        column: org_type
+        values: [financial]
+      - table: qa_loan_acc_detail
+        column: org_no
+        operator: in
+        values: [B001, B002]
+  golden: G-013.sql
+  covers: [R-TBL-001, C-04]
+  why_hard: |
+    用户过滤与权限过滤来自两个独立输入，机构业务名仍须精确翻译成 B001。
+    维表权限在前、主表权限在后，不能为方便按表重新排序，也不能都绑定到 t1。
+    显式列白名单同时约束 JOIN 键、时间、指标、分组、过滤与权限列。
+
+- id: G-014
+  shape: join_left_fail_closed
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [上级机构]
+  relations:
+    - left_table: qa_loan_acc_detail
+      left_column: org_no
+      right_table: dim_org
+      right_column: org_no
+      join_type: LEFT
+      cardinality: many_to_one
+  scope:
+    tables: [qa_loan_acc_detail, dim_org]
+    row_policies:
+      - table: dim_org
+        column: org_no
+  golden: G-014.sql
+  covers: [R-TBL-001, C-04]
+  why_hard: |
+    LEFT 的右表权限没有取值时，必须返回空结果，而不是把全部主表金额挂到 NULL 分组。
+    因此权限恒假条件留在 WHERE，不能仅追加到 ON 或静默丢弃。
+    编译器不因权限改变关联方向，也不改变从哪张表取指标。

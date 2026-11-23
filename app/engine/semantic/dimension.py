@@ -34,6 +34,8 @@ class LevelDef:
 
     group_by: str
     display: str = ""
+    #: 来源物理表；留空沿用指标主表，保持单表配置兼容。
+    table: str = ""
 
 
 @dataclass(frozen=True, slots=True)
