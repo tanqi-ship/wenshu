@@ -27,7 +27,8 @@
 维度分组（GROUP BY 编号列 + ``MAX(名称列)``）、业务过滤、行级权限注入。
 **已实现（M2.1）**：双时点对比 ``delta`` —— 一个 SELECT 内 ``WHERE etl_dt IN (...)``
 + 按拆分列聚合 + 差值列，禁止子查询（见 ``compiler/comparison.py``）。
-**未实现（M2）**：同比 / 环比 / 比率、Top N、每月 Top N、多表 JOIN、
+**已实现（M2.2）**：每月 Top N：月末聚合 + ROW_NUMBER 排名 + 外层筛选。
+**未实现（M2）**：同比 / 环比 / 比率、全局 Top N、多表 JOIN、
 报表 UNION 分支、占比、维度白名单类型检查。
 """
 
@@ -47,7 +48,8 @@ from app.engine.compiler.errors import (
     CompileStage,
 )
 from app.engine.compiler.metrics import qualify_columns
-from app.engine.compiler.time import build_time_condition, month_end_range
+from app.engine.compiler.time import build_point_condition, build_time_condition, month_end_range
+from app.engine.compiler.topn import resolve_monthly_topn, wrap_monthly_topn
 from app.engine.scope import Scope
 from app.engine.semantic.catalog import SemanticCatalog
 from app.engine.semantic.models import Intent, MetricDef
@@ -81,21 +83,28 @@ def compile_intent(
     metric = _resolve_metric(intent, catalog)
     table = _primary_table(metric, catalog, scope)
 
-    # ② check —— 多时点意图的显式校验（M2.1）。
-    #    放在造节点之前：一个"两个时点却没说怎么比"的 Intent，
-    #    必须在这里就失败，而不是产出一条"把两个时点加在一起"的 SQL。
-    #    返回的 points 是**已校验**的时点，下面直接用作投影的输入。
-    points = resolve_comparison_points(intent)
+    # ② check —— 每月序列与多时点对比是两种形状，先校验再造节点。
+    #    Top N 的时点用于逐月分组；只有对比时点才用于分段聚合。
+    monthly_points = resolve_monthly_topn(intent)
+    points = resolve_comparison_points(intent) if monthly_points is None else ()
 
     # ③ build —— 造节点
-    conditions: list[exp.Expression] = [
-        build_time_condition(
+    if monthly_points is not None:
+        time_condition = (
+            build_point_condition(
+                exp.column(policy.snapshot_column, table=alias), monthly_points, dialect=dialect
+            )
+            if monthly_points
+            else exp.EQ(this=exp.Literal.number(1), expression=exp.Literal.number(0))
+        )
+    else:
+        time_condition = build_time_condition(
             intent.time_range,
             alias=alias,
             policy=policy,
             dialect=dialect,
         )
-    ]
+    conditions: list[exp.Expression] = [time_condition]
     conditions.extend(build_business_conditions(intent, catalog, alias=alias))
     conditions.extend(build_policy_conditions(scope, alias=alias))
 
@@ -118,6 +127,10 @@ def compile_intent(
         if display_projection is not None:
             projections.append(display_projection)
         group_columns.append(group_column)
+    if monthly_points is not None:
+        snapshot = exp.column(policy.snapshot_column, table=alias)
+        projections.insert(0, exp.alias_(snapshot.copy(), policy.snapshot_column))
+        group_columns.insert(0, snapshot)
     projections.extend(metric_projections)
 
     select = exp.Select(
@@ -132,6 +145,15 @@ def compile_intent(
     )
     if group_columns:
         select = select.group_by(*group_columns)
+
+    if monthly_points is not None:
+        select = wrap_monthly_topn(
+            select,
+            snapshot_column=policy.snapshot_column,
+            group_columns=group_columns[1:],
+            metric_alias=metric.code,
+            limit=intent.top_n,
+        )
 
     # ⑤ render 之前最后一道自检：结构必须完整且能渲染。
     # 这道检查是有来历的：FROM 曾因 arg key 写错而静默丢失，

@@ -3,7 +3,7 @@
 > **用途**：这是一份「换会话也不会丢背景」的交接文档。
 > 新会话/新同事进来，读这一份就能知道：我们在做什么、做到哪了、怎么跑、下一步做什么。
 >
-> 最后更新：M1.5 黄金集门禁完成时。
+> 最后更新：2026-11-23，M2.2 每月 Top N 完成时。
 
 ---
 
@@ -73,13 +73,13 @@
 | **M0** | 骨架 + LLM 边界（fake/replay/real）+ 校验层 6 条规则 + 澄清槽位 + fixture + 评测集 | ✅ 完成 |
 | **M1** | 语义层（指标/维度/码值/关系）+ **编译器最小闭环** + `Scope` 权限注入 | ✅ 完成 |
 | **M1.5** | 黄金集门禁：`scripts/golden.py`（归一化/比对）+ `scripts/check_golden.py`（CLI）+ `eval/golden/cases.yaml` + pytest 接线 | ✅ 完成 |
-| **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / 每月 TopN / 多表 JOIN / 报表 UNION / 占比 / 机构名等值 | 🟡 进行中（1/6） |
+| **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / **2.2 每月 Top N ✅** / 多表 JOIN / 报表 UNION / 占比 / 机构名等值 | 🟡 进行中（2/6） |
 | **M3** | `question → Intent`（LLM，首次引入模型）+ 澄清接线 + 只读执行 | ⬜ |
 | **M4** | 可答性门禁 + 黄金集扩到 30 条 + 评测报告 + 失败归因 | ⬜ |
 
 **现在能做什么**：给定一个结构化 `Intent`，产出**通过 6 条规则校验**的 SQL，**0 次模型调用**；
-并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，9 条用例 = 9/9，覆盖 8 种形状）。
-能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**。
+并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，10 条用例 = 10/10，覆盖 9 种形状；281 项测试通过）。
+能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**、**每月 Top N**。
 
 **现在还不能做什么**：**给一句人话，产出 SQL。** 因为 `question → Intent` 属于 M3。
 （想现在体验端到端，只能用 `scripts/demo_ask.py` 里的**临时桩**：固定问题 → 固定 Intent。）
@@ -247,10 +247,10 @@ Python 版本已由 `uv` 解决（`uv python install 3.12`，不动系统 Python
 1. ~~**M2.1**：双时点对比（`R-COMP-001`）~~ ✅ **已完成**：`compiler/comparison.py`
    + `eval/golden/G-008/G-009.sql` + `tests/engine/test_compiler_comparison.py`（17 条）
    + `DECISIONS.md` ADR-0007。
-2. **M2.2**：每月 Top N（`R-TOPN-001`）—— 窗口函数 + 外层过滤。
-   `rules.py` 的 `monthly_topn_without_window` 已经在**检查**这个形状，
-   但编译器还不会**生成**它（和 M2.1 之前是同一个状态：校验器等在前面）。
-3. **M2.3~2.6**：多表 JOIN / 报表 UNION / 占比 / 机构名等值。
+2. ~~**M2.2**：每月 Top N（`R-TOPN-001`）~~ ✅ **已完成**：`compiler/topn.py`
+   + `eval/golden/G-010.sql` + `tests/engine/test_compiler_topn.py` + ADR-0008。
+   月末聚合 → `ROW_NUMBER` 按月排名 → 外层取前 N；并列按主体编号升序，权限在聚合前注入。
+3. **下一步 M2.3**：多表 JOIN（`RelationDef` 驱动，≤2 表）；随后 M2.4~2.6：报表 UNION / 占比 / 机构名等值。
 4. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
    - `MetricDef.is_percentage`（`semantic/models.py`）目前**没有任何地方使用** → `unit="%"` 不会自动触发 `R-PCT-001`
    - `tests` job 里的 `scripts.seed_fixture` **已从 CI 移除**（它只支持 PostgreSQL，而 CI 给的是 `sqlite:///`）。

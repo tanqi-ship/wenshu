@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -274,3 +275,17 @@ def test_scope_is_threaded_into_compilation(tmp_path: Path) -> None:
 
     unmatched = evaluate_case(without_scope, semantic_catalog(), validation_catalog())
     assert not unmatched.matches, "没有传 scope 却仍然对上了，说明 scope 根本没进编译器"
+
+
+def test_gate_checks_intent_even_when_wrong_sql_matches_golden(tmp_path: Path, monkeypatch) -> None:
+    """结构对照不能代替规则：黄金 SQL 自己漏掉窗口时，L4 也必须拒绝。"""
+    monthly = next(case for case in CASES if case.shape == "monthly_topn")
+    sql = "SELECT org_no, SUM(current_balnc_cny) AS bal FROM qa_loan_acc_detail GROUP BY org_no ORDER BY bal DESC LIMIT 1"
+    path = tmp_path / "G-900.sql"
+    path.write_text(sql, encoding="utf-8")
+    case = replace(monthly, id="G-900", sql_path=path)
+    monkeypatch.setattr("scripts.golden.compile_sql", lambda *args, **kwargs: sql)
+    outcome = evaluate_case(case, semantic_catalog(), validation_catalog())
+    assert outcome.matches
+    assert not outcome.ok
+    assert "TOPN_MISSING_WINDOW" in outcome.validation_codes

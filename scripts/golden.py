@@ -394,7 +394,7 @@ def evaluate_case(
         )
 
     comparison = compare(case.golden_sql, produced, dialect=dialect)
-    result = validate_sql(produced, catalog=catalog, scope=case.scope, dialect=dialect)
+    result = validate_sql(produced, catalog=catalog, scope=case.scope, intent=case.intent, dialect=dialect)
     return CaseOutcome(
         case=case,
         matches=comparison.matches,

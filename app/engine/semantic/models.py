@@ -35,17 +35,17 @@ class TimeRange:
 
     grain: TimeGrain
     raw: str = ""
-    #: 时点快照的具体日期，``grain=month_end`` 时使用。
+    #: 时点快照的具体日期；也可显式列出每月 Top N 的月末日期。
     points: tuple[date, ...] = ()
     start: date | None = None
     end: date | None = None
 
     @property
     def is_multi_point(self) -> bool:
-        """是否是多时点（同比/环比/双月对比）。
+        """日期列表是否包含多个时点，不单独决定 SQL 形状。
 
-        多时点必须用 ``WHERE snapshot IN (...)`` + ``CASE WHEN`` 一次筛出，
-        **禁止**用标量子查询去查另一个时点 —— 这条由 R-COMP-001 强制。
+        对比由 Intent.comparison 指定，用 IN + CASE WHEN 一次筛出（R-COMP-001）；
+        每月 Top N 则用 IN 筛快照，再按月末分组、排名（M2.2）。
         """
         return len(self.points) > 1
 
@@ -221,6 +221,11 @@ def intent_from_mapping(data: Mapping[str, object]) -> Intent:
 
     time_raw = data.get("time")
     top_n = data.get("top_n")
+    if top_n is not None:
+        if isinstance(top_n, str) and top_n.isdecimal():
+            top_n = int(top_n)
+        if type(top_n) is not int or top_n <= 0:
+            raise ValueError("top_n 必须是正整数。")
     comparison = data.get("comparison")
     source_mode = data.get("source_mode")
 

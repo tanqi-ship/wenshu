@@ -213,3 +213,24 @@
     但 SUM 会先在整张表上聚合 —— 语义全错而且只返回一行，不报错不告警。
     另外这条钉住"什么指标能做 delta"：顶层必须是单个 SUM。不良**率**（顶层是除法）
     会被明确拒绝。这是 M2.1 的显式边界，不是悄悄降级。
+
+# M2.2：每月 Top N。
+- id: G-010
+  shape: monthly_topn
+  intent:
+    metric: 贷款余额
+    time:
+      grain: month
+      start: "2026-01-01"
+      end: "2026-04-30"
+    dimensions: [机构]
+    top_n: 1
+    top_n_grain: month
+  golden: G-010.sql
+  eval_case: AQ-008
+  covers: [R-TOPN-001, C-12, R-NAME-001, D-10]
+  why_hard: |
+    ① 按完整月末日期 PARTITION BY，不能用全局 LIMIT 或只按月份数字分区。
+    ② 余额相同时按机构编号升序打破并列，ROW_NUMBER 保证每月最多 N 个主体。
+    ③ 只选月末快照，名称只做 MAX；月中快照不能累加进来。
+    ④ 三月快照缺失时不回退二月、不补零；返回实际存在的月份。

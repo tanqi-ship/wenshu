@@ -96,7 +96,7 @@ assert result.problems == []
 | 小步 | 形状 | 对应规则 | 用例 | 状态 |
 |---|---|---|---|---|
 | 2.1 | 双时点对比 `delta`（同一 SELECT + `CASE WHEN` 分段聚合） | `R-COMP-001` | AQ-004 | ✅ **完成** |
-| 2.2 | 每月 Top N（窗口函数 + 外层过滤） | `R-TOPN-001` | AQ-008 | ⬜ |
+| 2.2 | 每月 Top N（窗口函数 + 外层过滤） | `R-TOPN-001` | AQ-008 | ✅ **完成** |
 | 2.3 | 多表 JOIN（`RelationDef` 驱动，≤2 表） | `R-TBL-001` | AQ-007 | ⬜ |
 | 2.4 | 报表分支（禁 JOIN，多报表 `UNION ALL`） | `R-JOIN-001` | AQ-006 | ⬜ |
 | 2.5 | 占比（分子 + 分母是整体） | 新增 `R-RATIO-001` | — | ⬜ |
@@ -124,6 +124,28 @@ assert result.problems == []
 
 最后一条最值得记：**两个时点却没说怎么比，如果放过去，产出的 SQL 是把两个时点的余额加在一起**
 —— 跑得通、不报错、数字还挺像。这类错没有任何一层会喊。
+
+### M2.2 落地记录（2026-11-23）
+
+| 交付 | 位置 |
+|---|---|
+| Top N 意图与月末解析、排名包装 | `compiler/topn.py::resolve_monthly_topn / wrap_monthly_topn` |
+| 编译接线 | `compiler/__init__.py`：复用指标、维度、业务过滤与权限注入，再包装排名查询 |
+| 黄金 SQL | `eval/golden/G-010.sql`，对应 AQ-008；共 10 条黄金用例、9 类形状 |
+| 结果与边界验证 | `tests/engine/test_compiler_topn.py`：结构断言 + SQLite 内存执行 + 越界报错 |
+| 门禁接线 | `scripts/golden.py` 向校验器传 `Intent`；反例验证遗漏排名时门禁会失败 |
+| 决策记录 | `DECISIONS.md` **ADR-0008** |
+
+**口径**：先按月末与主体编号聚合，再 `ROW_NUMBER() OVER (PARTITION BY 月末 ORDER BY 指标 DESC, 主体编号 ASC)`，
+最后外层 `rn <= N`。只读区间内月末快照，不混入月中记录，不回退或补齐缺失月份；
+业务与权限过滤在聚合、排名前生效。多维度时按维度组合排名，指标 NULL 排在有效值后。
+
+**显式边界**：N 必须为正整数、必须指定排名维度与已解析时间；
+全局 Top N、与 comparison 或 report/union 分支混用均拒绝。配置加载不再把小数或布尔 N 静默转成整数。
+`TOPN_INVALID_N / TOPN_UNSUPPORTED / TOPN_DIMENSION_REQUIRED / TOPN_TIME_UNSUPPORTED` 属于 `intent`；
+输出列冲突报 `type_check/TOPN_OUTPUT_COLLISION`，时间缺失沿用 `TIME_UNRESOLVED`。
+
+**验收结果**：281 项测试通过；黄金集 10/10；Ruff 检查通过。下一步是 **M2.3 多表 JOIN**。
 
 ---
 

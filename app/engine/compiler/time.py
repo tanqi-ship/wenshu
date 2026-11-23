@@ -63,7 +63,7 @@ def build_time_condition(
                 TIME_UNRESOLVED,
                 f"时间条件（{time_range.raw or grain}）没有解析出具体时点，需要先澄清。",
             )
-        return _point_condition(column, points, dialect=dialect)
+        return build_point_condition(column, points, dialect=dialect)
 
     if grain == "range":
         if time_range.start is None or time_range.end is None:
@@ -78,7 +78,7 @@ def build_time_condition(
             high=exp.Literal.string(time_range.end.isoformat()),
         )
 
-    # month / quarter / year：需要"按月分组"这类形状，属于 M2
+    # 普通 month / quarter / year 聚合尚未支持；每月 Top N 由 topn.py 单独处理。
     raise CompileError(
         "intent",
         TIME_UNSUPPORTED,
@@ -86,7 +86,7 @@ def build_time_condition(
     )
 
 
-def _point_condition(
+def build_point_condition(
     column: exp.Expression,
     points: tuple[date, ...],
     *,
@@ -94,9 +94,8 @@ def _point_condition(
 ) -> exp.Expression:
     """单时点用 ``=``，多时点用 ``IN``。
 
-    多时点用 ``IN`` 不是风格选择：规则 R-COMP-001 要求两三个时点必须在
-    同一个 SELECT 里一次筛出，禁止用标量子查询分别查。
-    这里一次 ``IN`` 就把形状定死了，下游不可能写错。
+    对比查询用 IN 一次筛出时点（R-COMP-001），不使用标量子查询分别查；
+    每月 Top N 同样复用 IN 筛选月末快照，后续按月分组、排名。
     """
     del dialect  # 方言差异（DATE '...' vs 字符串）留到 M2；SQLite 用字符串
     literals = [exp.Literal.string(point.isoformat()) for point in points]
