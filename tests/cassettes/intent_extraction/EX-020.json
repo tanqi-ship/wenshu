@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "d46e2f32cd559d9d": {
+      "text": "{\"metrics\":[\"不良贷款率\"],\"time\":{\"grain\":\"month_end\",\"points\":[\"2026-04-30\"]},\"unresolved\":[]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}

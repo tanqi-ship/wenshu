@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "c5197761ff7203c4": {
+      "text": "{\"metrics\":[\"贷款余额\"],\"unresolved\":[\"2026年上半年\"]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}

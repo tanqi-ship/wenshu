@@ -11,11 +11,11 @@
 | 层 | 模块 | 输入 | 输出 | 是否调模型 | 失败方式 |
 |---|---|---|---|---|---|
 | **L0** 输入边界 | `engine/semantic`, `Scope` | 配置数据 | `SemanticCatalog`, `Scope` | ❌ | 配置错误（启动时/加载时暴露） |
-| **L1** 理解 | `engine/clarify` + `llm/` | `question` | `Intent` | ✅ **1 次** | 抽不出 → 澄清 |
+| **L1** 理解 | `engine/understanding/` + `llm.protocol` | `question` + 业务目录 | `ExtractionResult(Intent, Completion)` | ✅ **1 次** | `ExtractionError` / 原模型异常；澄清接线待 M3.2 |
 | **L2** 门禁 | `engine/clarify/slots.py`, `engine/coverage/` | `Intent` + 语义层 + `Scope` | 编译 / 澄清 / 拒答 | ❌ | 槽位落不了地 → 澄清或拒答 |
 | **L3** 编译 | `engine/compiler/` | `Intent` + 语义层 + `Scope` | `exp.Query`（Select / Union）→ SQL | ❌ | `CompileError`（**确定性失败**） |
 | **L4** 校验 | `engine/validation/` | SQL 文本 | `Problem[]` | ❌ | `Problem` 列表非空 |
-| **L5** 执行 | （待定，M3 之后） | SQL | `rows` | ❌ | 驱动异常 / 超时 |
+| **L5** 执行 | （待实现，M3.4） | SQL | `rows` | ❌ | 驱动异常 / 超时 |
 
 **核心不变式：只有 L1 不确定。**
 
@@ -50,7 +50,7 @@ DimensionDef(
         "financial": LevelDef(group_by="org_no", display="org_nm"),
         "customer_management": LevelDef(group_by="belong_org_no", display="belong_org_nm"),
     },
-    default_level_rule="实体是网点时 → customer_management，否则 → financial",
+    default_level="financial",  # 当前实际字段；M3.1 不自动切换非默认口径
     value_kind="high_cardinality",  # high_cardinality 值不能靠向量匹配，必须精确等值
 )
 ```
@@ -86,9 +86,9 @@ class Scope:
 ```
 metric       : 指标的业务名（不是列名）
 time_range   : TimeRange(grain=month_end | month | day | quarter | year | range)
-org          : 机构短语原文
+org          : 兼容旧结构保留；M3.1 始终 None，非空编译拒绝
 dimensions   : 维度名元组
-filters      : Filter(dimension, value, operator)   ← value 必须是数据库存储值
+filters      : Filter(dimension, value, operator)   ← 业务原值或存储码，L3 按登记翻译
 comparison   : delta | yoy | mom | rate
 share        : ShareSpec(dimension) | None  # 同一指标按一个业务维度占上下文整体的比例
 top_n        : int | None
@@ -99,7 +99,32 @@ source_mode  : plain | report | union
 **两个刻意的设计：**
 
 1. `Intent.confidence` 存在但**不参与任何判断**——它只写日志。可答性由 L2 的确定性槽位检查负责。
-2. `Filter.value` 必须是**数据库真实存储值**。编码映射在 L2 完成，不在 L3 猜。
+2. `Filter.value` 可以保留业务原值或存储编码，L3 按语义层精确登记做确定性翻译，不猜值。
+   high_cardinality 只 trim 两端空白；未知/歧义/缺配置拒绝。普通 coded 保持既有契约。
+   M3.1 仅接受 eq/in 且拒绝 null/空 IN/非字符串，不能借旧的 None 跳过契约删过滤。
+   具体机构进 filters；全行不制造过滤，也不改变外部 Scope。非空 Intent.org 普通/报表路径拒绝，share 保持自身拒绝。
+
+### M3.1 单轮抽取边界（已实现）
+
+`understanding/context.py → 一次 llm.complete → schema.py → Intent`；公共入口为
+`await extract_intent(question, catalog, llm=client)`，返回 `ExtractionResult(intent, completion)`。
+依赖仅到 semantic 与 llm.protocol，不读 env、不构造客户端、不接编译器/校验器/执行层。
+
+模型只见指标名/同义词/单位、维度名/同义词/默认口径键；无公式、物理表列、JOIN、报表分表、code_map 或 Scope。
+排序与 JSON 稳定；按实体查找的去空白 + casefold 检查同命名空间的别名/名称/目录键冲突，
+目录键参与冲突检查但不发给模型；该规范化不应用于机构过滤值。
+
+严格单一 JSON、所有层级字段白名单、重复键/非有限常量拒绝、嵌套最多 64 层；不剥围栏或修复。
+问题/目录/响应分别最多 4096/32768/32768 字符；调用固定 temperature=0、max_tokens=2048、timeout_s=30，失败不重试。
+先完整 schema/日期验证，再拒绝多个不同指标，最后拒绝 unresolved；错误有稳定 EXTRACTION_* code 与定位。
+根 metrics/unresolved 必填，缺指标/时间可保留；未知名称不替换；含糊/相对时间用原问题片段 unresolved，不读时钟。
+Intent.raw 只诊断，confidence 不作判断；格式正确不证明语义正确或可答。具体结构见已批准的 M3.1 规格。
+
+20 条固定 handwritten_fixture 的响应与预期分别手写，strict replay 提示词漂移报 ReplayMiss，不联网。
+有效样本仅在集成测试串 L3/L4；录制脚本需显式 real，坏响应 finally flush 且失败非零，来源另标 recorded_real。
+静态 system 1093 字符，当前业务目录 JSON 373 字符，20 个样本完整消息 1541～1558 字符；
+≤300 字目标未达，不把字符数冒称 tokens。未进行真实模型或外部数据库验收。
+M3.2 澄清、M3.3 状态、M3.4 执行和 M4 可答性门禁不在本轮。
 
 ---
 

@@ -1,0 +1,178 @@
+# 手写模型响应见各 cassette；以下预期独立手写，不由抽取器/编译器生成。
+# provenance 仅证明离线契约，不代表真实模型质量。
+cases:
+  - id: EX-001
+    question: 截至2026年4月末全行贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-001.json
+    provenance: handwritten_fixture
+    why_hard: 明确月末，全行不是机构条件
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile: true
+  - id: EX-002
+    question: 2026年4月末渝北的贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-002.json
+    provenance: handwritten_fixture
+    why_hard: 具体机构保留业务原文，由L3精确登记翻译
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 机构, value: 渝北, raw: 渝北}]
+    compile: true
+  - id: EX-003
+    question: 2026年4月末各机构各产品的不良贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-003.json
+    provenance: handwritten_fixture
+    why_hard: 多维分组不变成多个指标
+    expected:
+      metric: 不良贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [机构, 产品]
+    compile: true
+  - id: EX-004
+    question: 2026年5月末相比2026年4月末贷款余额增量
+    cassette: tests/cassettes/intent_extraction/EX-004.json
+    provenance: handwritten_fixture
+    why_hard: 两个快照而非跨月求和
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30', '2026-05-31']}
+      comparison: delta
+    compile: true
+  - id: EX-005
+    question: 2026年1月至3月每月月末贷款余额前2名机构
+    cassette: tests/cassettes/intent_extraction/EX-005.json
+    provenance: handwritten_fixture
+    why_hard: 每月排名不可变为全局排名
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-01-31', '2026-02-28', '2026-03-31']}
+      dimensions: [机构]
+      top_n: 2
+      top_n_grain: month
+    compile: true
+  - id: EX-006
+    question: 从报表查询2026年4月各产品不良贷款率
+    cassette: tests/cassettes/intent_extraction/EX-006.json
+    provenance: handwritten_fixture
+    why_hard: 明确报表，仍只给逻辑来源，不指定物理分表
+    expected:
+      metric: 不良贷款率
+      time: {grain: month, points: ['2026-04-30']}
+      dimensions: [产品]
+      source_mode: report
+    compile: true
+  - id: EX-007
+    question: 2026年4月末各产品贷款余额占整体的比例
+    cassette: tests/cassettes/intent_extraction/EX-007.json
+    provenance: handwritten_fixture
+    why_hard: 整体占比不是变化比率
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [产品]
+      share: {dimension: 产品}
+    compile: true
+  - id: EX-008
+    question: 贷款余额是多少
+    cassette: tests/cassettes/intent_extraction/EX-008.json
+    provenance: handwritten_fixture
+    why_hard: 缺时间不得补今天，也不代表可答
+    expected: {metric: 贷款余额}
+  - id: EX-009
+    question: 2026年4月末贷款迁徙率
+    cassette: tests/cassettes/intent_extraction/EX-009.json
+    provenance: handwritten_fixture
+    why_hard: 未知指标不得替换为已登记指标
+    expected:
+      metric: 贷款迁徙率
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile_error: UNKNOWN_METRIC
+  - id: EX-010
+    question: 2026年4月末贷款余额和不良贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-010.json
+    provenance: handwritten_fixture
+    why_hard: 多指标不能只取第一项
+    expected_error: EXTRACTION_MULTI_METRIC_UNSUPPORTED
+  - id: EX-011
+    question: 去年4月末贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-011.json
+    provenance: handwritten_fixture
+    why_hard: 相对年份不读系统时钟
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: [去年4月末]
+  - id: EX-012
+    question: 4月末贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-012.json
+    provenance: handwritten_fixture
+    why_hard: 缺少年份不补全
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: [4月末]
+  - id: EX-013
+    question: 2026年上半年贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-013.json
+    provenance: handwritten_fixture
+    why_hard: 不把半年余额猜为六月末
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: [2026年上半年]
+  - id: EX-014
+    question: 2026年4月贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-014.json
+    provenance: handwritten_fixture
+    why_hard: 月份不自动代表月末余额
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: [2026年4月]
+  - id: EX-015
+    question: 按管户口径查询2026年4月末各机构贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-015.json
+    provenance: handwritten_fixture
+    why_hard: 首版结构不能表达非默认机构口径
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: [管户口径]
+  - id: EX-016
+    question: 2026年4月末火星支行贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-016.json
+    provenance: handwritten_fixture
+    why_hard: 未知机构保留，不能删过滤退回全行
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 机构, value: 火星支行}]
+    compile_error: UNKNOWN_CODE
+  - id: EX-017
+    question: 2026年4月末各客户经理的贷款余额
+    cassette: tests/cassettes/intent_extraction/EX-017.json
+    provenance: handwritten_fixture
+    why_hard: 未知维度保留，不找近似维度
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [客户经理]
+    compile_error: UNKNOWN_DIMENSION
+  - id: EX-018
+    question: 2026年4月末
+    cassette: tests/cassettes/intent_extraction/EX-018.json
+    provenance: handwritten_fixture
+    why_hard: 缺指标不得选目录第一项
+    expected:
+      time: {grain: month_end, points: ['2026-04-30']}
+  - id: EX-019
+    question: 2026年4月末贷款余额前2名机构
+    cassette: tests/cassettes/intent_extraction/EX-019.json
+    provenance: handwritten_fixture
+    why_hard: 全局排名不偷偷改为每月
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [机构]
+      top_n: 2
+  - id: EX-020
+    question: 2026年4月末不良贷款率
+    cassette: tests/cassettes/intent_extraction/EX-020.json
+    provenance: handwritten_fixture
+    why_hard: 有报表配置不代表用户要求报表
+    expected:
+      metric: 不良贷款率
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile: true

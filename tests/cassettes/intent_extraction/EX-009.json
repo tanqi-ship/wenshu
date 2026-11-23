@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "9748eb9cad57103a": {
+      "text": "{\"metrics\":[\"贷款迁徙率\"],\"time\":{\"grain\":\"month_end\",\"points\":[\"2026-04-30\"]},\"unresolved\":[]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}
