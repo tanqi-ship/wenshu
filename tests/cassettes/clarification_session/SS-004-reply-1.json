@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "824e9f52dca1b770": {
+      "text": "{\"metrics\":[\"贷款余额\"],\"time\":{\"grain\":\"month_end\",\"points\":[\"2026-04-30\"]},\"unresolved\":[]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}

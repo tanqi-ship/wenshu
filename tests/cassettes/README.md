@@ -4,6 +4,9 @@
 
 - `intent_extraction/EX-001.json`～`EX-020.json`：手写假响应，**不是真实模型录制**。
 - 独立手写问题/预期/难点/来源：`tests/fixtures/intent_extraction/cases.yaml`。
+- `clarification_session/`：14份新手写响应（首轮/单槽补答/完整重述），独立会话预期见
+  `tests/fixtures/clarification_session/cases.yaml`，覆盖10组会话；其中部分首轮直接引用原EX文件，不复制或刷新。
+- slot-reply-v1与intent-extraction-v1消息协议分开；固定键不含owner/UUID/数据库路径，不依赖随机ID。
 - provenance=handwritten_fixture，model=synthetic/handwritten-fixture，token 数为 0。
 - 真实手动录制写入 `<WENSHU_LLM_CASSETTE_DIR>/recorded/intent_extraction/<case>.json`，
   同目录 `.provenance.json` 标记 recorded_real、协议版本与抽取成功/失败状态；不自动替换手写样本。
@@ -64,3 +67,18 @@ prompt/协议/业务目录改变可能导致键失配；未命中抛 ReplayMiss�
 
 当前静态 system 1093 字符，业务目录 JSON 373 字符，20 条完整消息内容总长度范围
 1541～1558 字符（EX-001：1550）；未达 ≤300 字精简目标，非 token 测量。
+
+## M3.3跨请求演示
+
+```bash
+python -m scripts.demo_session start --case SS-001
+python -m scripts.demo_session reply --case SS-001 --session-id <上一步ID> --expected-version 1
+python -m scripts.demo_session show --session-id <上一步ID>
+```
+
+默认会话文件为build/clarification_sessions.db（忽略产物）。SS-001补答为固定“2026年4月末”，
+应在新进程中恢复并保留渝北过滤；--db可显式指定其他本地路径。owner固定local-demo仅为演示，非认证方案。
+--case选择问题/响应，不读取expected字段决定状态；start/reply只strict replay，show不调用模型。
+澄清、预算停止、要求重启都是正常状态，退出0；版本冲突、回放未命中和技术错误非零。
+这些文件不是生产样本、准确率评测或L5业务查询能力证明。
+补答静态system717字符，9次固定单槽补答完整消息1398～1490字符，不是tokens。

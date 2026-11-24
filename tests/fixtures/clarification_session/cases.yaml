@@ -1,0 +1,163 @@
+# 问题、响应(cassette)与预期分别手写，不由被测代码刷新标准答案。
+cases:
+  - id: SS-001
+    provenance: handwritten_fixture
+    why_hard: 跨请求补日期必须保留渝北过滤
+    question: 渝北的贷款余额
+    start_cassette: tests/cassettes/clarification_session/SS-001-start.json
+    expected_start: awaiting_slot
+    replies:
+      - answer: 2026年4月末
+        cassette: tests/cassettes/clarification_session/SS-001-reply-1.json
+        expected_status: slots_complete
+        expected_rounds: 1
+    expected_final: slots_complete
+    expected_intent:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 机构, value: 渝北}]
+    compile: true
+  - id: SS-002
+    provenance: handwritten_fixture
+    why_hard: 补指标保留首轮日期，未知示例不自动选择
+    question: 2026年4月末
+    start_cassette: tests/cassettes/intent_extraction/EX-018.json
+    expected_start: awaiting_slot
+    replies:
+      - answer: 贷款余额
+        cassette: tests/cassettes/clarification_session/SS-002-reply-1.json
+        expected_status: slots_complete
+        expected_rounds: 1
+    expected_final: slots_complete
+    expected_intent:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile: true
+  - id: SS-003
+    provenance: handwritten_fixture
+    why_hard: 双缺失依次补齐，最后一次追问的有效回答可以完成
+    question: 我要查询
+    start_cassette: tests/cassettes/clarification_session/SS-003-start.json
+    expected_start: awaiting_slot
+    replies:
+      - answer: 贷款余额
+        cassette: tests/cassettes/clarification_session/SS-003-reply-1.json
+        expected_status: awaiting_slot
+        expected_rounds: 2
+      - answer: 2026年4月末
+        cassette: tests/cassettes/clarification_session/SS-003-reply-2.json
+        expected_status: slots_complete
+        expected_rounds: 2
+    expected_final: slots_complete
+    expected_intent:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile: true
+  - id: SS-004
+    provenance: handwritten_fixture
+    why_hard: 多指标无安全部分结果，完整重述不沿用旧条件
+    question: 2026年4月末贷款余额和不良贷款余额
+    start_cassette: tests/cassettes/intent_extraction/EX-010.json
+    expected_start: awaiting_question
+    replies:
+      - answer: 2026年4月末贷款余额
+        cassette: tests/cassettes/clarification_session/SS-004-reply-1.json
+        expected_status: slots_complete
+        expected_rounds: 1
+    expected_final: slots_complete
+    expected_intent:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile: true
+  - id: SS-005
+    provenance: handwritten_fixture
+    why_hard: 相对时间要求完整重述，不拼接猜年份
+    question: 去年4月末贷款余额
+    start_cassette: tests/cassettes/intent_extraction/EX-011.json
+    expected_start: awaiting_question
+    replies:
+      - answer: 2026年4月末贷款余额
+        cassette: tests/cassettes/clarification_session/SS-005-reply-1.json
+        expected_status: slots_complete
+        expected_rounds: 1
+    expected_final: slots_complete
+    expected_intent:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile: true
+  - id: SS-006
+    provenance: handwritten_fixture
+    why_hard: 两次仍含糊则停止，不能默认今天
+    question: 贷款余额是多少
+    start_cassette: tests/cassettes/intent_extraction/EX-008.json
+    expected_start: awaiting_slot
+    replies:
+      - answer: 去年
+        cassette: tests/cassettes/clarification_session/SS-006-reply-1.json
+        expected_status: awaiting_slot
+        expected_rounds: 2
+      - answer: 去年
+        cassette: tests/cassettes/clarification_session/SS-006-reply-2.json
+        expected_status: budget_exhausted
+        expected_rounds: 2
+    expected_final: budget_exhausted
+  - id: SS-007
+    provenance: handwritten_fixture
+    why_hard: 补日期时改机构不能只取日期丢掉变更
+    question: 渝北的贷款余额
+    start_cassette: tests/cassettes/clarification_session/SS-001-start.json
+    expected_start: awaiting_slot
+    replies:
+      - answer: 2026年4月末，改查江北
+        cassette: tests/cassettes/clarification_session/SS-007-reply-1.json
+        expected_status: restart_required
+        expected_rounds: 1
+    expected_final: restart_required
+  - id: SS-008
+    provenance: handwritten_fixture
+    why_hard: 首轮已齐全仍非权限结论，不需要补答
+    question: 截至2026年4月末全行贷款余额
+    start_cassette: tests/cassettes/intent_extraction/EX-001.json
+    expected_start: slots_complete
+    replies: []
+    expected_final: slots_complete
+    expected_intent:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile: true
+  - id: SS-009
+    provenance: handwritten_fixture
+    why_hard: 未知指标可以补入，后续仍被编译器拒绝
+    question: 2026年4月末
+    start_cassette: tests/cassettes/intent_extraction/EX-018.json
+    expected_start: awaiting_slot
+    replies:
+      - answer: 贷款迁徙率
+        cassette: tests/cassettes/clarification_session/SS-009-reply-1.json
+        expected_status: slots_complete
+        expected_rounds: 1
+    expected_final: slots_complete
+    expected_intent:
+      metric: 贷款迁徙率
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile_error: UNKNOWN_METRIC
+  - id: SS-010
+    provenance: handwritten_fixture
+    why_hard: 完整重述后缺时间，转换成补槽位但不重置预算
+    question: 2026年4月末贷款余额和不良贷款余额
+    start_cassette: tests/cassettes/intent_extraction/EX-010.json
+    expected_start: awaiting_question
+    replies:
+      - answer: 贷款余额
+        cassette: tests/cassettes/clarification_session/SS-010-reply-1.json
+        expected_status: awaiting_slot
+        expected_rounds: 2
+      - answer: 2026年4月末
+        cassette: tests/cassettes/clarification_session/SS-010-reply-2.json
+        expected_status: slots_complete
+        expected_rounds: 2
+    expected_final: slots_complete
+    expected_intent:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+    compile: true

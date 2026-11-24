@@ -124,7 +124,7 @@ Intent.raw 只诊断，confidence 不作判断；格式正确不证明语义正�
 有效样本仅在集成测试串 L3/L4；录制脚本需显式 real，坏响应 finally flush 且失败非零，来源另标 recorded_real。
 静态 system 1093 字符，当前业务目录 JSON 373 字符，20 个样本完整消息 1541～1558 字符；
 ≤300 字目标未达，不把字符数冒称 tokens。未进行真实模型或外部数据库验收。
-M3.1 本身不做澄清；M3.2 接线见下。M3.3 状态、M3.4 执行和 M4 可答性门禁仍未实现。
+M3.1 本身不做澄清；M3.2 接线见下。M3.3状态见后续小节，M3.4执行和M4可答性门禁仍未实现。
 
 ### M3.2 单轮准备与澄清（已实现）
 
@@ -149,8 +149,35 @@ slots_complete 分支可由调用方继续尝试 L3/L4；needs_clarification 不
 `tests/fixtures/clarification/cases.yaml` 独立手写准备层预期，引用未改的 20 条旧 EX 回放；
 测试不刷新消息键或响应。demo_prepare 即使 real 环境也只 strict replay，不执行 SQL。
 新 CLI 的澄清属于正常协议结果（退出 0），技术错误非零；demo_extract 旧错误退出码保持。
-新增 95 项测试，全量 1314、黄金 26/26；本轮只标 M3.2 完成，不实现状态、补答合并或执行。
-单轮独立调用不能处理“第二轮只答一个日期”的会话合并，这属于下一步 M3.3。
+M3.2验收时新增95项测试、全量1314、黄金26/26；当时只完成单轮接线，跨请求状态见下。
+单轮prepare_question仍独立；跨请求续轮由M3.3显式服务处理，见下。
+
+### M3.3 跨请求会话（已实现）
+
+`ClarificationService(store=..., llm=..., max_rounds=2)`提供start/reply/show；
+首轮复用prepare_question，续轮awaiting_slot只走slot-reply-v1与受限字段替换，不重新抽取完整原问题。
+M3.2纯确定性检查抽出内部函数供共享，公开行为/结果、M3.1消息/协议/旧cassette保持。
+
+状态为awaiting_slot、awaiting_question、slots_complete、budget_exhausted、restart_required。
+缺指标/时间保存安全Intent，只补当前缺失槽位；多指标/unresolved没有部分Intent，answer必须完整重述，
+单次调用一次prepare_question，仍缺信息沿用原总预算。要求变更已确认条件时终止，调用方另发完整新问题。
+预算统计已发出的追问；最后一次补答仍可成功，预算耗尽且缺信息则停止，不用旧默认值兜底。
+
+owner_key/catalog_revision由可信调用方传入，UUID不授权；目录业务摘要只能发现模型可见目录变化，
+物理语义变化依赖调用方正确更新revision。每次续轮验证owner/版本/状态/目录，再允许最多一次模型调用。
+会话不存Scope、密钥、连接或完整Completion；补答只见白名单业务上下文，不见物理结构、code_map或身份字段。
+结构限制不能证明模型没有漏掉条件变更；真实语义准确率仍需独立评测。
+
+SessionStore的create/get/CAS有内存与本地SQLite实现；JSON v1最多262144字符，
+恢复时严格验证字段/日期/计数/状态关系，显式Intent字段是权威，raw只诊断；损坏/未知版本不重置会话。
+SQLite固定SQL与绑定参数、独立短连接；不跨模型IO持有事务，按expected_version原子CAS提交version+1。
+过期请求零调用；并发请求可能已各自调用一次模型，但只允许一个状态提交，冲突不自动重试。
+技术或写入失败不返回虚假成功、不推进状态。当前无分布式幂等表、TTL/后台清理、HTTP或认证服务。
+
+10组固定手写会话、14份新cassette，CLI独立进程start/reply验证真实文件恢复；show零模型调用，
+协议澄清/停止正常退出0，版本/技术错误非零。新增161项，全量1475、黄金26/26。
+新补答静态指令717字符，9次固定补答完整消息1398～1490字符；旧精简目标仍未达，不冒称tokens或真实模型质量。
+**本地会话SQLite读写不是L5业务查询执行**；M3现为3/4，M3.4/M4仍未完成。
 
 ---
 

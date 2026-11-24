@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "b6ac977e34eecc97": {
+      "text": "{\"slot\":\"metric\",\"status\":\"filled\",\"value\":[\"贷款迁徙率\"],\"unresolved\":[]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}

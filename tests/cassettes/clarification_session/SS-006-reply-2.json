@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "dec0f39778d30fb3": {
+      "text": "{\"slot\":\"time_range\",\"status\":\"unclear\",\"value\":null,\"unresolved\":[\"去年\"]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}

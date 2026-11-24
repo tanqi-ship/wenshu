@@ -83,7 +83,7 @@ class Settings:
     explain_enabled: bool = True
 
     # -- 澄清预算 ----------------------------------------------------------
-    #: 一次提问最多追问几轮。超过就按默认值作答并在答案里标注口径。
+    #: 一次提问最多发出几次澄清。会话由调用方显式注入此值；耗尽且缺信息时停止，不猜默认值。
     max_clarify_rounds: int = 2
 
     extra: dict[str, str] = field(default_factory=dict)

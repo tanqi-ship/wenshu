@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "2e7d30d0704bd009": {
+      "text": "{\"metrics\":[],\"unresolved\":[]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}

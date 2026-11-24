@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "faee6c65ab352b19": {
+      "text": "{\"slot\":\"time_range\",\"status\":\"restart_required\",\"value\":null,\"unresolved\":[\"改查江北\"]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}

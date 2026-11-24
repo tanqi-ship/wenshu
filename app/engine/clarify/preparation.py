@@ -97,6 +97,11 @@ async def prepare_question(question: str, catalog: SemanticCatalog, *, llm: LLMC
             clarification=clarification,
         )
 
+    return _prepare_extraction(extraction, catalog)
+
+
+def _prepare_extraction(extraction: ExtractionResult, catalog: SemanticCatalog) -> PreparationResult:
+    """复用纯确定性槽位检查，不触发模型调用。"""
     intent = extraction.intent
     check = check_slots(
         {"metric": intent.metric, "time_range": intent.time_range},

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "model": "synthetic/handwritten-fixture",
+  "entries": {
+    "b8303e5120e8d0a6": {
+      "text": "{\"slot\":\"time_range\",\"status\":\"filled\",\"value\":{\"grain\":\"month_end\",\"points\":[\"2026-04-30\"]},\"unresolved\":[]}",
+      "model": "synthetic/handwritten-fixture",
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    }
+  }
+}
