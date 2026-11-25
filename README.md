@@ -8,9 +8,9 @@
 > **当前状态**：M0、M1、M1.5、M2（6/6）及 **M3 离线问数闭环（4/4）**已完成。
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 /
 > 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL** / **同口径整体占比**），并且有一条命令能回答"引擎现在算得对不对"：
-> `uv run python -m scripts.check_golden`（30 条手写黄金用例，30/30 通过，覆盖 28 种形状标签）。**1525 个测试全过。**
+> `uv run python -m scripts.check_golden`（30 条手写黄金用例，30/30 通过，覆盖 28 种形状标签）。**1528 个测试全过。**
 > **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；
-> M4.1 可答性判定、M4.2 黄金集扩展已完成；尚未实现评测报告和失败归因。见 `docs/ROADMAP.md`。
+> M4.1 可答性判定、M4.2 黄金集扩展、M4.3/M4.4 离线评测与失败归因已完成；真实模型质量评测仍未进行。见 `docs/ROADMAP.md`。
 
 ---
 
@@ -149,6 +149,7 @@ uv run python -m scripts.demo_prepare --case EX-008  # 离线准备：缺时间�
 uv run python -m scripts.demo_prepare --case EX-010  # 多指标请求指定一个，正常退出 0
 uv run python -m scripts.demo_session start --case SS-001 # 保存“渝北的贷款余额”，返回会话 ID 和版本
 uv run python -m scripts.check_golden        # 黄金集门禁：引擎产出 vs 手写黄金 SQL
+uv run python -m scripts.evaluate            # 离线评测：抽取/澄清/黄金/执行 + 失败归因
 uv run python -m scripts.trace_compile       # 学习工具：把编译器五步逐个打出来
 ```
 

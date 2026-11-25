@@ -75,10 +75,10 @@
 | **M1.5** | 黄金集门禁：`scripts/golden.py`（归一化/比对）+ `scripts/check_golden.py`（CLI）+ `eval/golden/cases.yaml` + pytest 接线 | ✅ 完成 |
 | **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / **2.2 每月 Top N ✅** / **2.3 双表 JOIN ✅** / **2.4 报表 UNION ALL ✅** / **2.5 整体占比 ✅** / **2.6 机构精确匹配 ✅** | ✅ 完成（6/6） |
 | **M3** | `question → Intent`（单次注入调用）+ 澄清接线 + 只读执行 | ✅ 4/4：离线闭环完成；未验真实模型 |
-| **M4** | 可答性门禁 + 黄金集扩到 30 条 + 评测报告 + 失败归因 | 🟡 2/4：M4.1～M4.2 完成 |
+| **M4** | 可答性门禁 + 黄金集扩到 30 条 + 评测报告 + 失败归因 | ✅ 4/4：离线评测完成；未验真实模型 |
 
 **现在能做什么**：给定一个结构化 `Intent`，产出**通过适用业务规则校验（共 8 条）**的 SQL，**0 次模型调用**；
-并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，30 条用例 = 30/30，覆盖 28 种形状标签；1525 项测试通过）。
+并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，30 条用例 = 30/30，覆盖 28 种形状标签；1528 项测试通过）。
 能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**、**每月 Top N**、**受限双表 INNER/LEFT JOIN**、**固定粒度单月报表与多月 UNION ALL**、**单表月末单维度的整体占比**。
 双表首批只做事实表指标 + 唯一维表维度/过滤，不与 delta/Top N 混用。
 
@@ -183,7 +183,7 @@ ruff check app scripts tests
 
 ```bash
 uv sync --group dev      # 建/更新 venv
-uv run pytest            # 1525 passed（不需要外部数据库/模型/网络）
+uv run pytest            # 1528 passed（不需要外部数据库/模型/网络）
 uv run ruff check .      # All checks passed
 uv run ruff format --check .
 uv run python -m scripts.demo_ask       # 端到端演示（见下）
