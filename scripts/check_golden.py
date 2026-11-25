@@ -179,6 +179,7 @@ def render_report(
                 "failure_kind": outcome.failure_kind,
                 "matches": outcome.matches,
                 "compile_error": outcome.compile_error,
+                "expected_compile_error": outcome.expected_compile_error,
                 "validation_ok": outcome.validation_ok,
                 "validation_codes": list(outcome.validation_codes),
                 "covers": list(outcome.case.covers),

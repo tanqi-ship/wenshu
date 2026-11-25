@@ -170,9 +170,20 @@ _CASE_ID_PATTERN = re.compile(r"^G-\d{3}$")
 _COVER_PATTERN = re.compile(r"^(C-\d{2}|R-[A-Z]+-\d{3}|D-\d{2})$")
 
 _CASE_KEYS = frozenset(
-    {"id", "shape", "intent", "scope", "relations", "golden", "covers", "eval_case", "why_hard"}
+    {
+        "id",
+        "shape",
+        "intent",
+        "scope",
+        "relations",
+        "golden",
+        "expected_compile_error",
+        "covers",
+        "eval_case",
+        "why_hard",
+    }
 )
-_REQUIRED_CASE_KEYS = ("id", "shape", "intent", "golden")
+_REQUIRED_CASE_KEYS = ("id", "shape", "intent")
 
 
 class GoldenConfigError(ValueError):
@@ -193,7 +204,7 @@ class GoldenCase:
     #: 编译器的输入。
     intent: Intent
     #: 手写黄金 SQL 的路径。
-    sql_path: Path
+    sql_path: Path | None
     #: 编译器的第三个输入（ADR-0004）。``None`` 表示这条用例不关心权限。
     #: 权限相关的形状（行级策略、fail-closed）必须靠它才能被测到 ——
     #: 这些形状的产出差异**只**来自 scope，不在 intent 里。
@@ -206,9 +217,13 @@ class GoldenCase:
     why_hard: str = ""
     #: None 沿用共用 L0；空元组显式无关系。不是 Intent 的 SQL 指令。
     relations: tuple[RelationDef, ...] | None = None
+    #: 预期的编译拒绝；格式为 ``stage/code``。此类用例没有黄金 SQL。
+    expected_compile_error: str = ""
 
     @property
     def golden_sql(self) -> str:
+        if self.sql_path is None:
+            raise GoldenConfigError(f"{self.id} 没有黄金 SQL：这是预期编译拒绝用例。")
         return self.sql_path.read_text(encoding="utf-8")
 
 
@@ -273,10 +288,18 @@ def cases_from_payload(
         missing = [key for key in _REQUIRED_CASE_KEYS if not item.get(key)]
         if missing:
             raise GoldenConfigError(f"{source} 第 {index} 项缺少字段：{', '.join(missing)}")
-
         case_id = str(item["id"]).strip()
         if not _CASE_ID_PATTERN.match(case_id):
             raise GoldenConfigError(f"{source} 第 {index} 项的 id 格式不对：{case_id!r}（应为 G-001 这类）")
+        expected_error = str(item.get("expected_compile_error") or "").strip()
+        golden_name = str(item.get("golden") or "").strip()
+        if bool(golden_name) == bool(expected_error):
+            raise GoldenConfigError(f"{case_id} 必须二选一提供 golden 或 expected_compile_error。")
+        if expected_error and not re.fullmatch(
+            r"(?:symbol_table|intent|type_check|scope|internal)/[A-Z0-9_]+", expected_error
+        ):
+            raise GoldenConfigError(f"{case_id} 的 expected_compile_error 格式必须是 stage/CODE。")
+
         if case_id in seen:
             raise GoldenConfigError(f"{source} 里 id 重复：{case_id}")
         seen.add(case_id)
@@ -286,8 +309,8 @@ def cases_from_payload(
             if not _COVER_PATTERN.match(code):
                 raise GoldenConfigError(f"{case_id} 的 covers 里有无法识别的编号：{code!r}")
 
-        sql_path = base / str(item["golden"]).strip()
-        if not sql_path.exists():
+        sql_path = base / golden_name if golden_name else None
+        if sql_path is not None and not sql_path.exists():
             raise GoldenConfigError(f"{case_id} 指向的黄金 SQL 不存在：{sql_path}")
 
         try:
@@ -313,11 +336,12 @@ def cases_from_payload(
                 eval_case=str(item.get("eval_case") or "").strip(),
                 why_hard=str(item.get("why_hard") or "").strip(),
                 relations=_case_relations(item["relations"], case_id) if "relations" in item else None,
+                expected_compile_error=expected_error,
             )
         )
 
     # 孤儿文件：有 .sql 但没登记。否则"加了一条黄金 SQL 却没人跑"会静默发生。
-    registered = {case.sql_path.name for case in cases}
+    registered = {case.sql_path.name for case in cases if case.sql_path is not None}
     orphans = sorted(path.name for path in base.glob("*.sql") if path.name not in registered)
     if orphans:
         raise GoldenConfigError(f"{source} 没有登记这些黄金 SQL：{', '.join(orphans)}")
@@ -380,14 +404,19 @@ class CaseOutcome:
     validation_codes: tuple[str, ...] = ()
     #: 编译期失败时记成 ``"stage/code"``；成功为空串。
     compile_error: str = ""
+    expected_compile_error: str = ""
 
     @property
     def ok(self) -> bool:
+        if self.expected_compile_error:
+            return self.compile_error == self.expected_compile_error
         return not self.compile_error and self.matches and self.validation_ok
 
     @property
     def failure_kind(self) -> str:
         """失败归类。四类对应四个不同的责任人（见 compiler/errors.py 的思路）。"""
+        if self.expected_compile_error and self.compile_error == self.expected_compile_error:
+            return "预期编译拒绝"
         if self.compile_error:
             return "编译失败"
         if not self.matches:
@@ -424,6 +453,15 @@ def evaluate_case(
             case=case,
             matches=False,
             compile_error=f"{exc.stage}/{exc.code}",
+            expected_compile_error=case.expected_compile_error,
+        )
+
+    if case.expected_compile_error:
+        return CaseOutcome(
+            case=case,
+            matches=False,
+            compile_error="编译器未拒绝",
+            expected_compile_error=case.expected_compile_error,
         )
 
     comparison = compare(case.golden_sql, produced, dialect=dialect)

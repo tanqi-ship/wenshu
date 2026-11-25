@@ -621,3 +621,75 @@
   why_hard: |
     简称精确为 B001 后仍是整体上下文，不能把业务别名处理混入授权值翻译。
     机构与产品行策略都必须在聚合前，产品展示过滤仍在整体窗口之后，不改变可见整体分母。
+
+- id: G-027
+  shape: plain_ratio
+  intent:
+    metric: 不良贷款率
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+  golden: G-027.sql
+  eval_case: AQ-003
+  covers: [C-07, R-PCT-001, D-09]
+  why_hard: |
+    分子必须使用五级分类 30/40/50，分母必须使用同一时点全行余额，且用 NULLIF 保护零分母。
+    比率保持 0 到 1 的小数，不能乘 100；逾期天数不是不良口径，NULL 也不能改变分类语义。
+
+- id: G-028
+  shape: ratio_with_business_and_row_policy
+  intent:
+    metric: 不良贷款率
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    filters:
+      - dimension: 机构
+        value: 渝北支行
+  scope:
+    tables: [qa_loan_acc_detail]
+    row_policies:
+      - table: qa_loan_acc_detail
+        column: org_no
+        operator: in
+        values: [B001, B002]
+  golden: G-028.sql
+  covers: [C-04, C-07, R-PCT-001, D-01]
+  why_hard: |
+    业务机构过滤与行权限必须同时作用于不良率的分子和分母，不能把分母扩大到全行。
+    机构必须使用财务 org_no，且不良仍按五级分类计算，不能偷换成逾期天数口径。
+
+- id: G-029
+  shape: report_single_month_filter
+  intent:
+    metric: 不良贷款率
+    source_mode: report
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+    dimensions: [产品]
+    filters:
+      - dimension: 产品
+        value: 消费贷款
+  golden: G-029.sql
+  covers: [C-04, C-06, R-JOIN-001, D-04]
+  why_hard: |
+    报表指标必须读取登记的标准五级分类报表，产品名称要精确翻译为 LP07 后过滤。
+    不能回退明细表、再次聚合预计算比例或误用同名的逾期口径报表。
+
+- id: G-030
+  shape: ratio_column_scope_rejection
+  intent:
+    metric: 不良贷款率
+    time:
+      grain: month_end
+      points: ["2026-04-30"]
+  scope:
+    tables: [qa_loan_acc_detail]
+    columns:
+      qa_loan_acc_detail: [etl_dt, fiv_lev_cla_flag]
+  expected_compile_error: scope/COLUMN_NOT_IN_SCOPE
+  covers: [C-07, R-PCT-001]
+  why_hard: |
+    不良率同时需要分类列和余额列；显式列权限缺少余额列时必须拒绝，不能执行不完整分子或分母。
+    这是 L3 权限边界，不应被 L4 的 SQL 校验或 L5 的数据库错误替代。

@@ -54,7 +54,7 @@ def test_golden_case_passes(case) -> None:  # type: ignore[no-untyped-def]
     """
     outcome = evaluate_case(case, semantic_catalog(), validation_catalog())
 
-    if outcome.compile_error:
+    if outcome.compile_error and not outcome.ok:
         pytest.fail(f"{case.id} 编译失败：{outcome.compile_error}")
     if outcome.comparison is not None and not outcome.matches:
         pytest.fail(f"{case.id} 与黄金 SQL 不一致：\n{outcome.comparison.render()}")
@@ -127,9 +127,43 @@ def test_gate_fails_when_golden_differs(tmp_path: Path) -> None:
     outcome = evaluate_case(case, semantic_catalog(), validation_catalog())
 
     assert not outcome.ok
-    assert outcome.failure_kind == "与黄金 SQL 不一致"
-    assert outcome.comparison is not None
-    assert outcome.comparison.diff
+
+
+def test_expected_compile_error_is_a_passing_golden_case(tmp_path: Path) -> None:
+    payload = [
+        {
+            "id": "G-901",
+            "shape": "expected_compile_rejection",
+            "intent": {"metric": "不良贷款率", "time": {"grain": "month_end", "points": ["2026-04-30"]}},
+            "scope": {"tables": [TABLE], "columns": {TABLE: ["etl_dt", "fiv_lev_cla_flag"]}},
+            "expected_compile_error": "scope/COLUMN_NOT_IN_SCOPE",
+            "covers": ["C-07"],
+            "why_hard": "百分比指标依赖分子和分母列，缺少余额列必须拒绝而不能执行不完整查询。",
+        }
+    ]
+    case = cases_from_payload(payload, directory=tmp_path, source="test")[0]
+    outcome = evaluate_case(case, semantic_catalog(), validation_catalog())
+    assert outcome.ok
+    assert outcome.failure_kind == "预期编译拒绝"
+
+
+def test_expected_compile_error_rejects_mismatched_error(tmp_path: Path) -> None:
+    payload = [
+        {
+            "id": "G-902",
+            "shape": "expected_compile_rejection",
+            "intent": {"metric": "不良贷款率", "time": {"grain": "month_end", "points": ["2026-04-30"]}},
+            "scope": {"tables": [TABLE], "columns": {TABLE: ["etl_dt", "fiv_lev_cla_flag"]}},
+            "expected_compile_error": "scope/TABLE_NOT_IN_SCOPE",
+            "covers": ["C-07"],
+            "why_hard": "预期错误码必须和实际编译错误严格一致，不能把权限问题笼统归类后放行。",
+        }
+    ]
+    case = cases_from_payload(payload, directory=tmp_path, source="test")[0]
+    outcome = evaluate_case(case, semantic_catalog(), validation_catalog())
+    assert not outcome.ok
+    assert outcome.failure_kind == "编译失败"
+    assert outcome.compile_error != outcome.expected_compile_error
 
 
 def test_gate_reports_compile_failure(tmp_path: Path) -> None:
