@@ -12,7 +12,7 @@
 |---|---|---|---|---|---|
 | **L0** 输入边界 | `engine/semantic`, `Scope` | 配置数据 | `SemanticCatalog`, `Scope` | ❌ | 配置错误（启动时/加载时暴露） |
 | **L1** 理解 | `engine/understanding/` + `llm.protocol` | `question` + 业务目录 | `ExtractionResult(Intent, Completion)` | ✅ **1 次** | `ExtractionError` / 原模型异常；单轮准备层仅选择性转澄清 |
-| **L2** 门禁 | `clarify/preparation.py` + `slots.py`（已接线）；`coverage/`（待 M4） | 已验证抽取结果 + 业务目录；M4 再接语义存在性/权限决策 | 当前仅必需槽位齐全 / 单个澄清 | ❌（判断不额外调用模型） | 技术错误透传，不将槽位齐全当作授权或可答 |
+| **L2** 门禁 | `clarify/preparation.py` + `query.py`（M4.1） | 已验证抽取结果 + 业务目录 + 当次 Scope | 澄清 / `UNANSWERABLE` / `OUT_OF_SCOPE` / 放行编译 | ❌（判断不额外调用模型） | 技术错误透传，不把槽位齐全当作授权或可答 |
 | **L3** 编译 | `engine/compiler/` | `Intent` + 语义层 + `Scope` | `exp.Query`（Select / Union）→ SQL | ❌ | `CompileError`（**确定性失败**） |
 | **L4** 校验 | `engine/validation/` | SQL 文本 | `Problem[]` | ❌ | `Problem` 列表非空 |
 | **L5** 执行 | `engine/execution.py`（M3.4） | L4 通过的 SQLite SQL | 列名、数据行、截断标记 | ❌ | 固定错误码：不可用、拒绝、超时等 |
@@ -124,7 +124,7 @@ Intent.raw 只诊断，confidence 不作判断；格式正确不证明语义正�
 有效样本仅在集成测试串 L3/L4；录制脚本需显式 real，坏响应 finally flush 且失败非零，来源另标 recorded_real。
 静态 system 1093 字符，当前业务目录 JSON 373 字符，20 个样本完整消息 1541～1558 字符；
 ≤300 字目标未达，不把字符数冒称 tokens。未进行真实模型或外部数据库验收。
-M3.1 本身不做澄清；M3.2～M3.4 接线见后续小节。M4 可答性门禁仍未实现。
+M3.1 本身不做澄清；M3.2～M3.4 接线见后续小节。M4.1 的可答性分类见 `engine/query.py`。
 
 ### M3.2 单轮准备与澄清（已实现）
 

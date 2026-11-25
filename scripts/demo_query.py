@@ -23,6 +23,7 @@ from scripts.seed_sqlite_business import DEFAULT_DB
 
 AQ_001_QUESTION = "2026年4月末全行贷款余额是多少？"
 AQ_001_CASSETTE = Path("tests/cassettes/query_execution/AQ-001.json")
+EXTRACTION_CASES_DIR = Path("tests/fixtures/intent_extraction")
 
 
 def demo_scope(value: str) -> Scope:
@@ -42,6 +43,9 @@ async def run(args: argparse.Namespace):
         raise SessionError("SESSION_NOT_FOUND", "本地会话数据库不存在。")
     if args.case == "AQ-001":
         text, cassette = AQ_001_QUESTION, AQ_001_CASSETTE
+    elif args.case == "EX-009":
+        case = find_case(args.case, EXTRACTION_CASES_DIR)
+        text, cassette = case["question"], case["cassette"]
     else:
         case = find_case(args.case, DEFAULT_CASES_DIR)
         if args.command == "start":
@@ -84,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         part.add_argument("--scope", choices=("all", "B001", "B002", "none"), default="all")
         part.add_argument("--max-rows", type=int, default=100)
         if command == "start":
-            part.add_argument("--case", choices=("AQ-001", "SS-002"), default="AQ-001")
+            part.add_argument("--case", choices=("AQ-001", "EX-009", "SS-002"), default="AQ-001")
         else:
             part.add_argument("--case", choices=("SS-002",), default="SS-002")
             part.add_argument("--session-id", required=True)

@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from app.engine.compiler import compile_sql
+from app.engine.compiler.errors import (
+    COLUMN_NOT_IN_SCOPE,
+    METRIC_OUT_OF_SCOPE,
+    TABLE_NOT_IN_SCOPE,
+    UNKNOWN_METRIC,
+    CompileError,
+)
 from app.engine.validation import validate_sql
 
 if TYPE_CHECKING:
@@ -31,6 +38,14 @@ class QueryAnswer:
 
 
 @dataclass(frozen=True, slots=True)
+class QueryRejection:
+    code: Literal["UNANSWERABLE", "OUT_OF_SCOPE"]
+    message: str
+    session_id: str
+    version: int
+
+
+@dataclass(frozen=True, slots=True)
 class QueryService:
     clarification: ClarificationService
     semantic: SemanticCatalog
@@ -39,7 +54,7 @@ class QueryService:
 
     async def start(
         self, question: str, *, owner_key: str, catalog_revision: str, scope: Scope
-    ) -> SessionResult | QueryAnswer:
+    ) -> SessionResult | QueryAnswer | QueryRejection:
         session = await self.clarification.start(
             question, self.semantic, owner_key=owner_key, catalog_revision=catalog_revision
         )
@@ -54,7 +69,7 @@ class QueryService:
         catalog_revision: str,
         expected_version: int,
         scope: Scope,
-    ) -> SessionResult | QueryAnswer:
+    ) -> SessionResult | QueryAnswer | QueryRejection:
         session = await self.clarification.reply(
             session_id,
             answer,
@@ -65,13 +80,30 @@ class QueryService:
         )
         return await self._finish(session, scope)
 
-    async def _finish(self, session: SessionResult, scope: Scope) -> SessionResult | QueryAnswer:
+    async def _finish(
+        self, session: SessionResult, scope: Scope
+    ) -> SessionResult | QueryAnswer | QueryRejection:
         if session.status != "slots_complete" or session.intent is None:
             return session
         # ``None`` would mean unrestricted to L3. Only an explicit Scope is valid here.
         if scope is None:
             raise TypeError("业务查询必须显式提供 Scope。")
-        sql = compile_sql(session.intent, self.semantic, scope=scope, dialect="sqlite")
+        try:
+            sql = compile_sql(session.intent, self.semantic, scope=scope, dialect="sqlite")
+        except CompileError as exc:
+            if (exc.stage, exc.code) == ("symbol_table", UNKNOWN_METRIC):
+                return QueryRejection(
+                    "UNANSWERABLE", "当前不支持查询该指标。", session.session_id, session.version
+                )
+            if exc.stage == "scope" and exc.code in (
+                METRIC_OUT_OF_SCOPE,
+                TABLE_NOT_IN_SCOPE,
+                COLUMN_NOT_IN_SCOPE,
+            ):
+                return QueryRejection(
+                    "OUT_OF_SCOPE", "当前权限无法完成该查询。", session.session_id, session.version
+                )
+            raise
         validation = validate_sql(
             sql, catalog=self.physical, scope=scope, intent=session.intent, dialect="sqlite"
         )

@@ -9,9 +9,8 @@ import pytest
 import yaml
 
 from app.engine.clarify.session import ClarificationService, MemorySessionStore, SessionError
-from app.engine.compiler import CompileError
 from app.engine.execution import ExecutionError, QueryRows
-from app.engine.query import QueryService, QueryValidationError
+from app.engine.query import QueryRejection, QueryService, QueryValidationError
 from app.engine.scope import Scope
 from app.engine.semantic.bank_mini import TABLE, TABLE_COLUMNS, semantic_catalog
 from app.engine.validation.catalog import Catalog
@@ -44,8 +43,13 @@ async def test_failure_stops_before_execute(kind):
     executor = Mock()
     query = service(executor, physical=Catalog())
     scope = Scope() if kind == "compile" else Scope.of([TABLE])
-    with pytest.raises(CompileError if kind == "compile" else QueryValidationError):
-        await query.start(AQ_001_QUESTION, **_CONTEXT, scope=scope)
+    if kind == "compile":
+        result = await query.start(AQ_001_QUESTION, **_CONTEXT, scope=scope)
+        assert isinstance(result, QueryRejection)
+        assert result.code == "OUT_OF_SCOPE"
+    else:
+        with pytest.raises(QueryValidationError):
+            await query.start(AQ_001_QUESTION, **_CONTEXT, scope=scope)
     executor.execute.assert_not_called()
 
 
@@ -53,6 +57,40 @@ async def test_no_implicit_unrestricted_scope():
     executor = Mock()
     with pytest.raises(TypeError, match="Scope"):
         await service(executor).start(AQ_001_QUESTION, **_CONTEXT, scope=None)
+    executor.execute.assert_not_called()
+
+
+async def test_unknown_metric_is_unanswerable_before_validation_or_execution(monkeypatch):
+    from app.engine import query as module
+
+    examiner = Mock(wraps=module.validate_sql)
+    monkeypatch.setattr(module, "validate_sql", examiner)
+    executor = Mock()
+    query = service(executor, Path("tests/cassettes/intent_extraction/EX-009.json"))
+    result = await query.start("2026年4月末贷款迁徙率", **_CONTEXT, scope=Scope.of([TABLE]))
+    assert result == QueryRejection("UNANSWERABLE", "当前不支持查询该指标。", result.session_id, 1)
+    examiner.assert_not_called()
+    executor.execute.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("scope", "code"),
+    [
+        (Scope(), "METRIC_OUT_OF_SCOPE"),
+        (Scope.of([TABLE], columns={TABLE: frozenset({"etl_dt"})}), "COLUMN_NOT_IN_SCOPE"),
+    ],
+)
+async def test_scope_compile_errors_are_out_of_scope(scope, code, monkeypatch):
+    from app.engine import query as module
+
+    examiner = Mock(wraps=module.validate_sql)
+    monkeypatch.setattr(module, "validate_sql", examiner)
+    executor = Mock()
+    result = await service(executor).start(AQ_001_QUESTION, **_CONTEXT, scope=scope)
+    assert isinstance(result, QueryRejection)
+    assert result.code == "OUT_OF_SCOPE"
+    assert code not in result.message
+    examiner.assert_not_called()
     executor.execute.assert_not_called()
 
 
@@ -114,7 +152,21 @@ def test_aq001_full_and_row_scoped(tmp_path):
     }
     assert payload(cli("start", *args, "--scope", "B001"))["result"]["rows"] == [[12_660_000]]
     denied = cli("start", *args, "--scope", "none")
-    assert denied.returncode == 1 and "[scope/" in denied.stderr
+    assert denied.returncode == 0 and json.loads(denied.stdout)["code"] == "OUT_OF_SCOPE"
+
+
+def test_cli_returns_business_rejection_without_internal_details(tmp_path):
+    business = tmp_path / "business.db"
+    seed_business(business)
+    result = cli(
+        "start", "--case", "EX-009", "--business-db", business, "--session-db", tmp_path / "state.db"
+    )
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["code"] == "UNANSWERABLE"
+    assert payload["message"] == "当前不支持查询该指标。"
+    assert "qa_loan_acc_detail" not in result.stdout
+    assert "UNKNOWN_METRIC" not in result.stdout
 
 
 def test_cross_process_reply_uses_current_scope(tmp_path):
