@@ -55,7 +55,7 @@
 | 13 问题清晰度校验 | LLM + 代码 | 🟡 部分：`clarify/preparation.py` 单轮接线 + 显式指标/时间槽位检查 | ✅ M3.2（不含 M4） |
 | **19 SQL 生成与校验** | **LLM 自由写 + 9 层事后校验** | ✅ **★ 核心替代**：编译器 + `validation/` | ✅ **M1 完成** |
 | 21 / 22 指标卡 / 结果列命名 | LLM | ❌ **不做**（下游展示） | — |
-| 50a 执行查询 | 代码 | ⬜ 只读执行 + 行数上限 | ⬜ M3.4 |
+| 50a 执行查询 | 代码 | SQLite 只读执行、行数上限及查询预算 | ✅ M3.4 |
 | 50b-2 结果总结 | LLM | ❌ **不做** | — |
 
 **一句话**：askdb 的核心痛点集中在「节点 19：让模型自由写 SQL，再用 prompt 约束」。
@@ -74,11 +74,11 @@
 | **M1** | 语义层（指标/维度/码值/关系）+ **编译器最小闭环** + `Scope` 权限注入 | ✅ 完成 |
 | **M1.5** | 黄金集门禁：`scripts/golden.py`（归一化/比对）+ `scripts/check_golden.py`（CLI）+ `eval/golden/cases.yaml` + pytest 接线 | ✅ 完成 |
 | **M2** | 形状扩展：**2.1 双时点 `delta` ✅** / **2.2 每月 Top N ✅** / **2.3 双表 JOIN ✅** / **2.4 报表 UNION ALL ✅** / **2.5 整体占比 ✅** / **2.6 机构精确匹配 ✅** | ✅ 完成（6/6） |
-| **M3** | `question → Intent`（单次注入调用）+ 澄清接线 + 只读执行 | 🟡 3/4：M3.1～M3.3 完成；未验真实模型 |
+| **M3** | `question → Intent`（单次注入调用）+ 澄清接线 + 只读执行 | ✅ 4/4：离线闭环完成；未验真实模型 |
 | **M4** | 可答性门禁 + 黄金集扩到 30 条 + 评测报告 + 失败归因 | ⬜ |
 
 **现在能做什么**：给定一个结构化 `Intent`，产出**通过适用业务规则校验（共 8 条）**的 SQL，**0 次模型调用**；
-并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，26 条用例 = 26/26，覆盖 25 种形状标签；1475 项测试通过）。
+并且有一条命令能回答"引擎现在算得对不对"（黄金集门禁，26 条用例 = 26/26，覆盖 25 种形状标签；1507 项测试通过）。
 能出的形状：月末/日/区间 单时点、维度分组、业务过滤、行级权限（含 fail-closed）、**双时点 delta 对比**、**每月 Top N**、**受限双表 INNER/LEFT JOIN**、**固定粒度单月报表与多月 UNION ALL**、**单表月末单维度的整体占比**。
 双表首批只做事实表指标 + 唯一维表维度/过滤，不与 delta/Top N 混用。
 
@@ -176,14 +176,14 @@ ruff check app scripts tests
 |---|---|
 | Python | ✅ **3.12.16**，由 `uv` 管理的独立副本（`C:\Users\EDY\AppData\Roaming\uv\python\...`），不动系统 Python |
 | 项目 venv | ✅ `.venv/` 已建立（`uv sync --group dev`），`uv.lock` 已生成 |
-| 数据库 | **不需要外部服务**。测试已含 SQLite 内存结果验证；L5 执行链仍待 M3.4 |
+| 数据库 | **不需要外部服务**。L5 使用独立的本地 SQLite 业务库；会话仍存单独的数据库 |
 | LLM | **不需要真实模型**。编译路径 0 次；M3.1 抽取路径 1 次注入调用，CI 用 fake/strict replay |
 
 ### 怎么跑
 
 ```bash
 uv sync --group dev      # 建/更新 venv
-uv run pytest            # 1475 passed（含 SQLite 内存测试，不需要外部数据库/模型/网络）
+uv run pytest            # 1507 passed（不需要外部数据库/模型/网络）
 uv run ruff check .      # All checks passed
 uv run ruff format --check .
 uv run python -m scripts.demo_ask       # 端到端演示（见下）
@@ -212,7 +212,7 @@ uv run python -m scripts.check_golden   # 黄金集门禁（26/26 通过）
 
 **结论：不用 Docker 做开发环境。**
 Python 版本已由 `uv` 解决（`uv python install 3.12`，不动系统 Python）；
-M1~M3 不需要外部数据库服务；结果验证使用 SQLite 内存库，L5 执行链仍在 M3.4。
+M1~M3 不需要外部数据库服务；L5 端到端测试使用独立的 SQLite 文件。
 
 `docker-compose.yml` 已按 ADR-0006 改好：**默认不启动任何服务**，
 `--profile pg` / `--profile oracle` 才按需启动。文件本身正确，只是当前拉不到镜像。
@@ -300,8 +300,8 @@ L4 不负责从同名 npl_rate 自动判别业务口径，正确来源还由显�
    可信调用方显式传owner_key/catalog_revision，当次Scope仍由下游提供，不保存权限/连接/密钥；不是HTTP或认证系统。
    新增161项，全量1475，黄金26/26、10条评测纪律、8条规则保持；10组独立手写会话、14份新cassette，旧EX/黄金/AQ不改。
    补答静态prompt717字符、9次固定单槽补答完整消息1398～1490字符，不是tokens；旧精简目标仍未达，无真实模型/联网/外部数据库。
-   本地应用状态SQLite不是L5；ADR-0015。实现待用户决定中文提交。
-10. **下一步 M3.4**：SQLite业务只读执行、行数上限和完整流水线；M4和真实模型验收仍未完成。
+   本地应用状态SQLite不是L5；ADR-0015。
+10. **M3.4 已完成**：SQLite 业务只读执行与完整流水线，AQ-001 严格离线回放得到 20210000 元，跨进程补答使用当次 Scope。下一步 M4.1 可答性判定；真实模型仍未验收。
 11. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
    - `MetricDef.is_percentage` 已用于拒绝对现有比率再次计算占比；但 `unit="%"` 仍未统一自动传给所有路径的 `R-PCT-001` 别名输入
    - `tests` job 里的 `scripts.seed_fixture` **已从 CI 移除**（它只支持 PostgreSQL，而 CI 给的是 `sqlite:///`）。

@@ -5,12 +5,12 @@
 > **定位**：这是**学习与工程实践**项目，不是产品。
 > 目标是把「问数引擎为什么会不准」这件事拆到底，并给出可验证的答案。
 >
-> **当前状态**：M0 / **M1 最小闭环** / **M1.5 黄金集门禁** / **M2.1 双时点对比** / **M2.2 每月 Top N** / **M2.3 受限双表 JOIN** / **M2.4 报表 UNION ALL** / **M2.5 整体占比** / **M2.6 机构精确匹配** 完成（M2：6/6）；**M3.1 单轮意图抽取** / **M3.2 单轮澄清接线** / **M3.3 跨请求澄清状态**完成（M3：3/4） ——
+> **当前状态**：M0、M1、M1.5、M2（6/6）及 **M3 离线问数闭环（4/4）**已完成。
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 /
 > 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL** / **同口径整体占比**），并且有一条命令能回答"引擎现在算得对不对"：
-> `uv run python -m scripts.check_golden`（26 条手写黄金用例，26/26 通过，覆盖 25 种形状标签）。**1475 个测试全过。**
+> `uv run python -m scripts.check_golden`（26 条手写黄金用例，26/26 通过，覆盖 25 种形状标签）。**1507 个测试全过。**
 > **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；
-> 只读执行（M3.4）；可答性门禁与黄金集扩到 30 条（M4）。见 `docs/ROADMAP.md`。
+> 可答性门禁与黄金集扩到 30 条（M4）。见 `docs/ROADMAP.md`。
 
 ---
 
@@ -99,7 +99,7 @@
 会话不保存 Scope/密钥/连接，owner_key 与目录版本由可信调用方提供，不等于登录/权限系统。
 10 组固定手写会话、14 份新 cassette 和独立进程恢复测试通过；本地状态读写**不是 L5 业务查询执行**。
 专用补答静态指令 717 字符，固定样本消息内容合计 1398～1490 字符，不是 tokens；旧 prompt 精简目标仍未达。
-**下一步：M3.4 SQLite 业务只读执行与行数上限**；M4 可答性门禁和真实模型质量验收仍未完成。
+**M3.4** 将会话接到编译、校验与 SQLite 业务只读执行；M4 可答性门禁和真实模型质量验收仍未完成。
 
 
 ---
@@ -141,7 +141,7 @@ askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写�
 
 ```bash
 uv sync --group dev
-uv run pytest                                # 1475 passed，不需要外部数据库 / 模型 / 网络
+uv run pytest                                # 1507 passed，不需要外部数据库 / 模型 / 网络
 uv run ruff check .                          # All checks passed
 uv run python -m scripts.demo_ask            # 固定问题桩：问题 → Intent → SQL → 校验
 uv run python -m scripts.demo_extract --case EX-001  # 离线抽取：严格回放 → Intent，不执行 SQL
@@ -163,6 +163,20 @@ uv run python -m scripts.trace_compile       # 学习工具：把编译器五步
 SS-001 补答固定为“2026年4月末”，最终 Intent 保留“渝北”机构过滤。所有演示仅严格回放；
 show 零模型调用，澄清/停止是正常协议结果，版本冲突和技术错误返回非零。
 CLI 的固定 owner 只用于本地演示，尚无 HTTP 接口或用户认证。
+
+离线问数闭环（造数命令只运行一次，不覆盖现有文件）：
+
+```powershell
+uv run python -m scripts.seed_sqlite_business
+uv run python -m scripts.demo_query start --case AQ-001
+uv run python -m scripts.demo_query start --case AQ-001 --scope B001
+uv run python -m scripts.demo_query start --case SS-002 --scope B002
+uv run python -m scripts.demo_query reply --session-id '<上一步的 session_id>' --expected-version 1 --scope B001
+```
+
+AQ-001 全行返回 `20210000` 元，`B001` 范围返回 `12660000` 元。SS-002 首轮缺指标，固定补答为“贷款余额”，
+以补答当次的 `B001` 权限执行。`build/business_fixture.db` 是只读业务测试库；`build/query_sessions.db` 仅保存会话。
+默认最多返回 100 行，超限通过 `truncated` 标记，查询预算 2 秒；SQL 校验未通过时不执行。
 
 **测试包含 SQLite 内存结果验证，不需要外部数据库。** 双表关联默认要求维表键唯一，
 基数声明不是数据质量检查；`None` Scope 不限制，显式空 Scope 拒绝访问。JOIN 暂不与 delta/Top N/report/union 组合。
