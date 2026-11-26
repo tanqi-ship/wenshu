@@ -3,7 +3,7 @@
 > **用途**：这是一份「换会话也不会丢背景」的交接文档。
 > 新会话/新同事进来，读这一份就能知道：我们在做什么、做到哪了、怎么跑、下一步做什么。
 >
-> 最后更新：2026-11-26，M4 离线门禁、评测报告与失败归因完成后，与代码逐项核对时。
+> 最后更新：2026-11-26，M4 离线门禁、评测报告与失败归因完成后，与代码逐项核对时；同日补入开发规范入口（`AGENTS.md`、`DEVELOPMENT.md`、`EVALUATION.md`、`GLOSSARY.md`）。
 
 ---
 
@@ -31,8 +31,8 @@
 
 | 项目 | 路径 | 它是什么 | 我们借什么 |
 |---|---|---|---|
-| **askdb** | `D:\projecct\askdb` | 固定 24 节点 DAG + 参考资产（报表/相似问/SQL模板）+ 5,500 字 prompt 让模型写 SQL。188 py。**本机跑不起来**（缺 MySQL/千帆 KB/LLM 端点） | 语义层的数据形态、三层权限纵深、业务规则清单、**8 条踩坑清单** |
-| **auto-ontology** | `D:\projecct\auto-ontology` | ReAct + 自动 ontology 编译 + pgvector RAG。470 py。NVIDIA 开源 | ontology 自动编译的思路、可答性门禁、确定性工具校验、**「prompt 里的规则块会掉准确率」的实测结论** |
+| **askdb** | 工作笔记本 `D:\projecct\askdb`；家里电脑路径不同 | 固定 24 节点 DAG + 参考资产（报表/相似问/SQL模板）+ 5,500 字 prompt 让模型写 SQL。188 py。**本机跑不起来**（缺 MySQL/千帆 KB/LLM 端点） | 语义层的数据形态、三层权限纵深、业务规则清单、**8 条踩坑清单** |
+| **auto-ontology** | 工作笔记本 `D:\projecct\auto-ontology`；家里电脑 `E:\MyPythonProject\auto-ontology` | ReAct + 自动 ontology 编译 + pgvector RAG。470 py。NVIDIA 开源 | ontology 自动编译的思路、可答性门禁、确定性工具校验、**「prompt 里的规则块会掉准确率」的实测结论** |
 
 **阅读地图**：`docs/REFERENCES.md`（按"值得读 / 只读结论 / 不必读"分好了类）
 
@@ -52,7 +52,7 @@
 | 09-2 机构类型与口径判断 | LLM | ✅ 变成 `DimensionDef.levels` **字典查询** | ✅ |
 | 10 参考知识检索 | LLM + 千帆 KB | ❌ **不做**（不靠相似问/SQL模板） | — |
 | 12 选表 | LLM | 🟡 部分：指标来源表反查 + `Scope` 限定 | ✅ 部分 |
-| 13 问题清晰度校验 | LLM + 代码 | 🟡 部分：`clarify/preparation.py` 单轮接线 + 显式指标/时间槽位检查 | ✅ 部分：`clarify/preparation.py` 单轮接线 + 显式指标/时间槽位检查 | ✅ M3.2～M3.4（追问、跨请求会话、执行） |
+| 13 问题清晰度校验 | LLM + 代码 | 🟡 部分：`clarify/preparation.py` 单轮接线 + 显式指标/时间槽位检查 | ✅ M3.2～M3.4（追问、跨请求会话、执行） |
 | **19 SQL 生成与校验** | **LLM 自由写 + 9 层事后校验** | ✅ **★ 核心替代**：编译器 + `validation/` | ✅ **M1 完成** |
 | 21 / 22 指标卡 / 结果列命名 | LLM | ❌ **不做**（下游展示） | — |
 | 50a 执行查询 | 代码 | SQLite 只读执行、行数上限及查询预算 | ✅ M3.4 |
@@ -117,6 +117,7 @@ L5 执行   SQL → rows                               ← M3.4
 3. L4 只接收 SQL **文本** → 否则编译器的 bug 会被自己的校验放过。
 
 详细：`docs/ARCHITECTURE.md`；决策与翻案条件：`docs/DECISIONS.md`；路线图：`docs/ROADMAP.md`。
+开发流程与完成标准：`AGENTS.md`、`docs/DEVELOPMENT.md`；评测口径：`docs/EVALUATION.md`；完整术语：`docs/GLOSSARY.md`。
 
 ---
 
@@ -133,6 +134,8 @@ L5 执行   SQL → rows                               ← M3.4
 | **覆盖率门禁** | 编译之前判断"语义层能支撑多少"，决定 编译 / 澄清 / 拒答 |
 | **黄金集** | 手写的标准 SQL。引擎产出必须与它结构等价。**不是引擎生成的**，否则只证明"没变" |
 | **fail-closed** | 出错时默认拒绝。例如行策略没有取值 → 生成恒假条件，而不是跳过 |
+
+完整术语表在 `docs/GLOSSARY.md`，新术语登记在那里；这里只留最常用的几个。
 
 ---
 
@@ -153,13 +156,14 @@ L5 执行   SQL → rows                               ← M3.4
 
 ```bash
 # 1) 环境（见第九节：需要先建 venv）
-uv sync --group dev            # 或 pip install -e . + dev 依赖
+uv sync --locked --group dev
+uv run pre-commit install      # 每台电脑装一次；首次提交会联网下载钩子环境，可能要等几分钟
 
 # 2) 测试（含 SQLite 内存执行，不需要外部数据库/模型/网络）
-pytest
+uv run pytest
 
 # 3) lint
-ruff check app scripts tests
+uv run ruff check .
 ```
 
 **可运行的验证点**（三层，缺一层都不算守住）：
@@ -179,21 +183,22 @@ ruff check app scripts tests
 
 | 项 | 状态 |
 |---|---|
-| Python | ✅ **3.12.16**，由 `uv` 管理的独立副本（`C:\Users\EDY\AppData\Roaming\uv\python\...`），不动系统 Python |
-| 项目 venv | ✅ `.venv/` 已建立（`uv sync --group dev`），`uv.lock` 已生成 |
+| Python | ✅ **3.12.16**，由 `uv` 管理的独立副本（路径随电脑不同，`uv python find 3.12` 可查），不动系统 Python |
+| 项目 venv | ✅ `.venv/` 已建立（`uv sync --locked --group dev`），`uv.lock` 已生成 |
 | 数据库 | **不需要外部服务**。L5 使用独立的本地 SQLite 业务库；会话仍存单独的数据库 |
 | LLM | **不需要真实模型**。编译路径 0 次；M3.1 抽取路径 1 次注入调用，CI 用 fake/strict replay |
 
 ### 怎么跑
 
 ```bash
-uv sync --group dev      # 建/更新 venv
+uv sync --locked --group dev   # 建/更新 venv
+uv run pre-commit install      # 每台电脑装一次
 uv run pytest            # 1528 passed（不需要外部数据库/模型/网络）
 uv run ruff check .      # All checks passed
 uv run ruff format --check .
 uv run python -m scripts.demo_ask       # 端到端演示（见下）
 uv run python -m scripts.check_golden   # 黄金集门禁（30/30 通过）
-uv run python -m scripts.evaluate       # 离线评测（71/71 通过，写入 eval/report.json 与 eval/report.md）
+uv run python -m scripts.evaluate       # 离线评测（71/71 通过；eval/report.* 是机器产物，不提交）
 ```
 
 ### 为什么用 uv 而不是手工 venv
@@ -313,6 +318,10 @@ L4 不负责从同名 npl_rate 自动判别业务口径，正确来源还由显�
    `QueryService` 区分 `UNANSWERABLE` 与 `OUT_OF_SCOPE`；新增 `G-027`～`G-030`（其中 `G-030` 是预期编译拒绝）；
    `scripts/evaluate.py` 输出 71 条固定回放评测与失败归因表。**真实模型质量评测仍未进行。**
    M0～M4 的离线里程碑到此全部完成，目前没有排期的下一步；真实模型对照、真实语义层加载和检索层都还没有设计或排期。
+
+   **下一步（2026-11-26，待确认）**：开发规范已定稿。建议先为真实模型基线评测写 Spec，
+   模型选型、问题集和调用预算在 Spec 中确定，经人工确认后再出 Plan；可配置语义层、PostgreSQL 闭环、
+   本体与 ReAct 排在其后，均未设计、未排期。Spec、Plan、PR 和会话交接的模板尚未建立。
 12. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
    - `MetricDef.is_percentage` 已用于拒绝对现有比率再次计算占比；但 `unit="%"` 仍未统一自动传给所有路径的 `R-PCT-001` 别名输入
    - `tests` job 里的 `scripts.seed_fixture` **已从 CI 移除**（它只支持 PostgreSQL，而 CI 给的是 `sqlite:///`）。

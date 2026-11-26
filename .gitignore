@@ -77,11 +77,13 @@ Thumbs.db
 #   忽略：eval/golden_report.json / golden_summary.md   ← 机器生成的比对结果
 #   忽略：eval/regression_summary.md                    ← check_regression.py 的默认输出
 #   提交：eval/golden/*.sql、eval/golden/cases.yaml      ← 手写的标准答案与用例
-#   提交：eval/report.md                                 ← M4 的评测报告（验收物，不是产物）
+#   忽略：eval/report.json、eval/report.md               ← scripts.evaluate 每次重新生成
 # -----------------------------------------------------------------------------
 eval/golden_report.json
 eval/golden_summary.md
 eval/regression_summary.md
+eval/report.json
+eval/report.md
 
 # =============================================================================
 #  以下内容**必须提交**，不要在这里加规则去忽略它们：

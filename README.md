@@ -5,12 +5,11 @@
 > **定位**：这是**学习与工程实践**项目，不是产品。
 > 目标是把「问数引擎为什么会不准」这件事拆到底，并给出可验证的答案。
 >
-> **当前状态**：M0、M1、M1.5、M2（6/6）及 **M3 离线问数闭环（4/4）**已完成。
+> **当前状态**：M0、M1、M1.5、M2（6/6）、**M3 离线问数闭环（4/4）**及 **M4 离线评测（4/4）**已完成。
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 /
 > 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL** / **同口径整体占比**），并且有一条命令能回答"引擎现在算得对不对"：
-> `uv run python -m scripts.check_golden`（30 条手写黄金用例，30/30 通过，覆盖 28 种形状标签）。**1528 个测试全过。**
-> **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；
-> M4.1 可答性判定、M4.2 黄金集扩展、M4.3/M4.4 离线评测与失败归因已完成；真实模型质量评测仍未进行。见 `docs/ROADMAP.md`。
+> `uv run python -m scripts.check_golden`。最新测试与评测结果见 `docs/CONTEXT.md`。
+> **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；真实模型质量评测仍未进行。见 `docs/ROADMAP.md`。
 
 ---
 
@@ -99,9 +98,9 @@
 会话不保存 Scope/密钥/连接，owner_key 与目录版本由可信调用方提供，不等于登录/权限系统。
 10 组固定手写会话、14 份新 cassette 和独立进程恢复测试通过；本地状态读写**不是 L5 业务查询执行**。
 专用补答静态指令 717 字符，固定样本消息内容合计 1398～1490 字符，不是 tokens；旧 prompt 精简目标仍未达。
-**M3.4** 将会话接到编译、校验与 SQLite 业务只读执行：只有 L4 无问题才执行，默认最多 100 行、查询预算 2 秒。
+**M3.4** 已将会话接到编译、校验与 SQLite 业务只读执行：只有 L4 无问题才执行，默认最多 100 行、查询预算 2 秒。
 **M4.1** 在问数入口把未登记指标归为 `UNANSWERABLE`，指标/表/列无权限归为 `OUT_OF_SCOPE`，两类拒绝不进入 L4/L5。
-**M4.3/M4.4** `scripts.evaluate` 一次跑完 71 条固定回放评测并按阶段归因失败。真实模型质量验收仍未进行。
+**M4.3/M4.4** `scripts.evaluate` 一次跑完固定回放评测并按阶段归因失败。真实模型质量验收仍未进行。
 
 
 ---
@@ -142,8 +141,9 @@ askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写�
 ## 四、快速开始
 
 ```bash
-uv sync --group dev
-uv run pytest                                # 1528 passed，不需要外部数据库 / 模型 / 网络
+uv sync --locked --group dev
+uv run pre-commit install                      # 每台电脑装一次本地提交钩子；首次提交会联网下载钩子环境
+uv run pytest                                # 不需要外部数据库 / 模型 / 网络
 uv run ruff check .                          # All checks passed
 uv run python -m scripts.demo_ask            # 固定问题桩：问题 → Intent → SQL → 校验
 uv run python -m scripts.demo_extract --case EX-001  # 离线抽取：严格回放 → Intent，不执行 SQL
@@ -192,7 +192,11 @@ AQ-001 全行返回 `20210000` 元，`B001` 范围返回 `12660000` 元。SS-002
 
 | 文档 | 看什么 |
 |---|---|
+| **`AGENTS.md`** | AI 和新会话的统一入口：读取顺序、硬边界、常用命令和完成标准 |
 | **`docs/CONTEXT.md`** | ★ **新会话/新同事先读这一份**：项目是什么、做到哪了、我们在替代 askdb 的哪一步、怎么跑、踩过哪些坑 |
+| `docs/DEVELOPMENT.md` | 双机切换、分支、提交、PR、测试门禁和 Definition of Done |
+| `docs/EVALUATION.md` | 测试与评测的区别、黄金集纪律、指标定义和真实模型评测边界 |
+| `docs/GLOSSARY.md` | 项目术语统一表：架构、语义层、模型、评测、本体和工程流程 |
 | `docs/ARCHITECTURE.md` | 分层、数据流、编译器内部结构、错误分类、`Scope` 三个注入点 |
 | `docs/DECISIONS.md` | 已定的架构决策（ADR），每条都写了"什么情况下翻案" |
 | `docs/ROADMAP.md` | M0~M4 里程碑，每步的验收标准和对应评测用例 |
