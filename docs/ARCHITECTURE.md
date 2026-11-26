@@ -189,6 +189,25 @@ SQLite固定SQL与绑定参数、独立短连接；不跨模型IO持有事务，
 超时不返回部分行，连接和游标退出时关闭。读取上限不是扫描量或字节上限，查询预算不是硬实时保证。
 执行失败不回滚已完成的澄清状态，不自动修 SQL 或重试。
 
+### M4.1 可答性分类（已实现）
+
+`engine/query.py::_finish` 没有独立的覆盖率打分：会话槽位补齐后直接编译，再把 `CompileError` 映射成两类业务拒绝。
+
+- `symbol_table/UNKNOWN_METRIC` → `UNANSWERABLE`。
+- `scope` 阶段的 `METRIC_OUT_OF_SCOPE` / `TABLE_NOT_IN_SCOPE` / `COLUMN_NOT_IN_SCOPE` → `OUT_OF_SCOPE`。
+- 其他编译错误原样抛出，不归入这两类。
+
+拒绝只带固定中文文案、会话 ID 和版本，不携带 SQL、物理表列名或内部错误，也不进入 L4/L5。
+`coverage/` 目录仍只有 COMPILE / CLARIFY / REFUSE 三态的设计说明，没有代码；`retrieval/` 同为占位。
+
+### M4.3 / M4.4 离线评测与失败归因（已实现）
+
+`scripts/evaluate.py` 用固定回放跑四套：抽取 20 条、澄清 20 条、黄金 30 条、AQ-001 本地 SQLite 端到端 1 条，共 71 条。
+输出 `eval/report.json` 与 `eval/report.md`，每条记录是否通过、失败阶段与错误码、模型回放调用数、耗时。
+失败阶段固定为 `understanding` / `clarification` / `semantic` / `scope` / `compiler` / `validation` / `execution`，
+另有 `data` 表示 SQL 执行成功但结果与预期不符。
+报告标注 `replay` 模式、无真实模型、无外部数据库；71/71 说明手写契约没有被破坏，不是真实模型准确率。
+
 ---
 
 ## 四、L3：编译器内部五步

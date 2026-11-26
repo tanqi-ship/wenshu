@@ -99,7 +99,9 @@
 会话不保存 Scope/密钥/连接，owner_key 与目录版本由可信调用方提供，不等于登录/权限系统。
 10 组固定手写会话、14 份新 cassette 和独立进程恢复测试通过；本地状态读写**不是 L5 业务查询执行**。
 专用补答静态指令 717 字符，固定样本消息内容合计 1398～1490 字符，不是 tokens；旧 prompt 精简目标仍未达。
-**M3.4** 将会话接到编译、校验与 SQLite 业务只读执行；M4 可答性门禁和真实模型质量验收仍未完成。
+**M3.4** 将会话接到编译、校验与 SQLite 业务只读执行：只有 L4 无问题才执行，默认最多 100 行、查询预算 2 秒。
+**M4.1** 在问数入口把未登记指标归为 `UNANSWERABLE`，指标/表/列无权限归为 `OUT_OF_SCOPE`，两类拒绝不进入 L4/L5。
+**M4.3/M4.4** `scripts.evaluate` 一次跑完 71 条固定回放评测并按阶段归因失败。真实模型质量验收仍未进行。
 
 
 ---
@@ -141,7 +143,7 @@ askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写�
 
 ```bash
 uv sync --group dev
-uv run pytest                                # 1507 passed，不需要外部数据库 / 模型 / 网络
+uv run pytest                                # 1528 passed，不需要外部数据库 / 模型 / 网络
 uv run ruff check .                          # All checks passed
 uv run python -m scripts.demo_ask            # 固定问题桩：问题 → Intent → SQL → 校验
 uv run python -m scripts.demo_extract --case EX-001  # 离线抽取：严格回放 → Intent，不执行 SQL
@@ -214,8 +216,8 @@ wenshu/
 │   │   ├── validation/     # L4 校验层（只读 / 名字 / 范围 / 8 条业务规则，含独立占比/机构规则）
 │   │   ├── understanding/  # M3.1 严格单轮抽取 + 最小业务上下文
 │   │   ├── clarify/        # M3.2单轮准备 + M3.3 session/跨请求状态、存储、补答合并
-│   │   ├── retrieval/      # L2 检索式定范围：按业务词找候选表/列/指标（M3）
-│   │   └── coverage/       # L2 可答性门禁：COMPILE / CLARIFY / REFUSE（M4）
+│   │   ├── retrieval/      # 占位：只有职责说明，尚无代码
+│   │   └── coverage/       # 占位：只有设计说明，尚无代码；已实现的可答性分类在 query.py
 │   ├── llm/                # 模型访问边界：Protocol + fake / replay / real
 │   └── config.py
 ├── eval/cases/             # 评测集（yaml，带 why_hard / covers）
