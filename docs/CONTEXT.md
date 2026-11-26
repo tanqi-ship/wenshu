@@ -319,9 +319,12 @@ L4 不负责从同名 npl_rate 自动判别业务口径，正确来源还由显�
    `scripts/evaluate.py` 输出 71 条固定回放评测与失败归因表。**真实模型质量评测仍未进行。**
    M0～M4 的离线里程碑到此全部完成，目前没有排期的下一步；真实模型对照、真实语义层加载和检索层都还没有设计或排期。
 
-   **下一步（2026-11-26，待确认）**：开发规范已定稿。建议先为真实模型基线评测写 Spec，
-   模型选型、问题集和调用预算在 Spec 中确定，经人工确认后再出 Plan；可配置语义层、PostgreSQL 闭环、
-   本体与 ReAct 排在其后，均未设计、未排期。Spec、Plan、PR 和会话交接的模板尚未建立。
+   **下一步（2026-11-26）**：开发规范已定稿。第一个功能任务是真实模型基线评测，口径为 DeepSeek API（`deepseek-flash`）、
+   关闭思考模式、20 条抽取题加 10 条 AQ、每题 3 次；Spec 已经人工确认，见
+   `docs/superpowers/specs/2026-11-26-real-model-baseline-design.md`；实施计划见
+   `docs/superpowers/plans/2026-11-26-real-model-baseline-plan.md`，**尚未开始写代码**。
+   基线运行的原始输出不提交，只留在运行它的那台电脑。可配置语义层、PostgreSQL 闭环、本体与 ReAct 排在其后，均未设计、未排期。
+   Spec、Plan、PR 和会话交接的模板尚未建立。
 12. **M2 期间顺手补的欠账**（不阻塞，但别忘）：
    - `MetricDef.is_percentage` 已用于拒绝对现有比率再次计算占比；但 `unit="%"` 仍未统一自动传给所有路径的 `R-PCT-001` 别名输入
    - `tests` job 里的 `scripts.seed_fixture` **已从 CI 移除**（它只支持 PostgreSQL，而 CI 给的是 `sqlite:///`）。
