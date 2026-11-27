@@ -39,7 +39,7 @@ SemanticCatalog:
 当前 `SemanticCatalog` 不持有表结构目录；物理表列名称由独立的校验 `Catalog` 管理。
 `LevelDef.table` 留空表示指标主表；非空时明确关联维度的来源物理表。
 
-**`DimensionDef` 是 askdb 缺失的那块，也是本项目相对它最重要的新增。** 它的形状：
+**`DimensionDef` 是语义层里最容易缺失的一块。** 它的形状：
 
 ```python
 DimensionDef(
@@ -222,7 +222,7 @@ compile_intent(intent, semantic, scope) -> exp.Query
 │     dims   = [semantic.dimension(d) for d in intent.dimensions]   # → UNKNOWN_DIMENSION
 │     values = resolve_code_map(dim, intent.filters)    # → UNKNOWN_CODE
 │
-├─ ② check     类型检查（askdb 完全没有这一步）
+├─ ② check     类型检查
 │     for dim in dims: assert dim.code in metric.dimensions   # → DIMENSION_NOT_ALLOWED
 │     assert metric.source_tables ⊆ scope.tables              # → METRIC_OUT_OF_SCOPE
 │     resolve_comparison_points(intent)                       # M2.1：多时点意图的 4 条显式校验
@@ -427,19 +427,3 @@ WHERE/HAVING/JOIN ON/CASE/FILTER 等条件均检查；窗口控制不当标识�
 递归机构输出、相关作用域、LATERAL 表值参数和多源歧义不能确认时 fail-closed；不建设通用血缘平台。
 非精确匹配报 ORG_MATCH_NOT_EXACT，来源不明报 ORG_MATCH_SOURCE_UNRESOLVED。
 独立规则证明匹配形状，不证明编码登记、业务唯一性、默认口径正确或完整权限无遗漏；这些仍需知识及结果测试。
-
----
-
-## 七、和 askdb 的结构性差异（一句话版）
-
-| 维度 | askdb | wenshu |
-|---|---|---|
-| SQL 谁写 | 模型自由写 | 编译器展开 |
-| 模型调用次数 | 13~14 次串行 | **1 次** |
-| 业务规则 | 5,500 字 prompt | 代码 + 单测 |
-| 失败可重试 | 是（4 次） | **否**（确定性） |
-| 维度口径 | prompt 里的一行散文 | `DimensionDef.levels` 字典 |
-| 权限注入点 | 分散多处（曾泄漏） | **一处**（L3 的 ④） |
-| 拒答原因 | 11 种 reason 散在 4 个节点 | 5 类 stage，可统计 |
-
-**注意：wenshu 不是"更好的 askdb"。** 它放弃了 askdb 擅长的东西（澄清广度、周边功能、中文业务规则沉淀量），只深挖一件事：**把 SQL 生成这件事变成确定的**。
