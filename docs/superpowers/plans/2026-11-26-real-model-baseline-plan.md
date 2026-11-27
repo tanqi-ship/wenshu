@@ -44,11 +44,11 @@
 
 ## 3. 记录型客户端与预算（T2）
 
-- [ ] 新建 `scripts/call_recorder.py`：
+- [x] 新建 `scripts/call_recorder.py`：
   `CallRecord`；`RecordingLLM` 包住任意客户端，不重试、不改请求，记录消息摘要、原文、返回的模型版本、
   `finish_reason`、token 数、耗时和异常；`BudgetExhausted` 和 `RunAborted` 两个异常；
   调用数触顶、连续 5 次 `transport` 失败时抛出，成功一次后连续计数清零。
-- [ ] 新建 `tests/engine/test_call_recorder.py`，包 `FakeLLM`：调用次数和记录内容；
+- [x] 新建 `tests/engine/test_call_recorder.py`，包 `FakeLLM`：调用次数和记录内容；
   请求消息与不包时一致；`transport` 异常原样抛出且被记录；触顶后不再调用；连续计数清零。
 
 验证：`uv run pytest tests/engine/test_call_recorder.py`、Ruff。
