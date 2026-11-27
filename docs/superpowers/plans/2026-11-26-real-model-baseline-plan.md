@@ -76,13 +76,13 @@
 
 ## 5. 文档与合并（T4）
 
-- [ ] `docs/EVALUATION.md`：第 6 节写真实评测的运行方式；第 7 节归因阶段加 `transport`；
+- [x] `docs/EVALUATION.md`：第 6 节写真实评测的运行方式；第 7 节归因阶段加 `transport`；
   写明运行目录不提交、`CONTEXT.md` 要记 run_id 和所在电脑。
-- [ ] `docs/GLOSSARY.md`：基线、全对率、多数通过率、不稳定题、记录型客户端、思考模式。
-- [ ] `docs/ROADMAP.md`：新增 M5 和 M5.1。
-- [ ] `README.md`：快速开始加命令，注明需要密钥、不在 CI 里跑。
-- [ ] `AGENTS.md`：常用命令加 `evaluate_real`，注明是人工步骤。
-- [ ] `docs/CONTEXT.md`：写成「实现完成，尚未运行」。
+- [x] `docs/GLOSSARY.md`：基线、全对率、多数通过率、不稳定题、记录型客户端、思考模式。
+- [x] `docs/ROADMAP.md`：新增 M5 和 M5.1。
+- [x] `README.md`：快速开始加命令，注明需要密钥、不在 CI 里跑。
+- [x] `AGENTS.md`：常用命令加 `evaluate_real`，注明是人工步骤。
+- [x] `docs/CONTEXT.md`：写成「实现完成，尚未运行」。
 - [ ] 推送分支，开 PR，等 Ruff、Pytest、Golden-set gate 三个 job 通过，自审后合并，拉回 `main`。
 
 ## 6. 人工步骤（需要密钥，不进 CI）

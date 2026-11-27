@@ -329,11 +329,33 @@ demo_ask 与 trace_compile 可运行。独立样本 B001=100，代码前缀误�
 
 ---
 
+## M5 · 真实模型基线 ✅ 运行器实现完成，尚未运行（M5.1）
+
+| 小步 | 内容 | 验收物 |
+|---|---|---|
+| 5.1 | 真实模型基线：DeepSeek `deepseek-flash`、关闭思考、20 抽取 + 10 AQ、每题 3 次 | `scripts/evaluate_real.py` + `scripts/call_recorder.py` + `scripts/judging.py`；`eval/real/<run_id>/` 四份报告 |
+
+**M5.1 落地记录（2026-11-27）**
+
+| 交付 | 位置 |
+|---|---|
+| T0 关闭思考模式 | `app/config.py`、`app/llm/real.py`、`app/llm/factory.py`、`.env.example`；7 项测试 |
+| T1 共享判定 | `scripts/judging.py`、`scripts/evaluate.py`；26 项测试，离线 71/71 |
+| T2 记录器与预算 | `scripts/call_recorder.py`；7 项测试 |
+| T3 运行器与报告 | `scripts/evaluate_real.py`；11 项测试，输出 `report.json`、`report.md`、`calls.jsonl`、`review.md` |
+| T4 文档与 PR | 本节、`EVALUATION.md`、`GLOSSARY.md`、`README.md`、`AGENTS.md`、`CONTEXT.md` |
+
+**验收状态**：运行器实现完成；前置检查、预算/连续 `transport` 中止、黄金对照、密钥不落盘与 `eval/real/` 忽略已验证；
+全量 1579 项测试、离线评测 71/71、Ruff 通过。
+**未完成**：T5 冒烟、T6 全量运行、T7 人工归因；真实模型准确率尚无结论。
+
+---
+
 ## 里程碑与"要回答的四个问题"的对应
 
 | 问题 | 什么时候能答 |
 |---|---|
-| 把 SQL 从模型手里拿走，准确率能提高多少？ | **M4.3** |
+| 把 SQL 从模型手里拿走，准确率能提高多少？ | **M4.3 离线 + M5.1 真实基线（运行后）** |
 | 哪些规则可以代码化，哪些只能留 prompt？ | **M2**（8 条规则的边界就是答案） |
 | 问数需要几次模型调用？ | **M3**（编译路径 0 次，理解路径 1 次） |
 | "答不了"和"没权限"能分开告诉用户吗？ | **M4.1** |

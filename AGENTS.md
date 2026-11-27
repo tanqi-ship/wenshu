@@ -66,6 +66,7 @@ uv run ruff check .
 uv run ruff format --check .
 uv run python -m scripts.check_golden
 uv run python -m scripts.evaluate
+uv run python -m scripts.evaluate_real   # 真实模型基线：人工步骤，需要密钥，不在 CI
 ```
 
 日常 Python、pytest、ruff 和项目脚本优先使用 `uv run`。不要提交 `.venv`、`.env`、`build/`、缓存或数据库文件。
@@ -77,6 +78,7 @@ uv run python -m scripts.evaluate
 - Python 代码：`uv run ruff check .`、`uv run ruff format --check .`、`uv run pytest`
 - SQL 编译/校验：`uv run python -m scripts.check_golden`
 - 评测/报告：`uv run python -m scripts.evaluate`
+- 真实模型基线：`uv run python -m scripts.evaluate_real`（人工步骤，需要密钥，不在 CI；输出 `eval/real/` 不提交）
 - 端到端：运行相关 `demo_query` 或专项测试
 - 文档：检查链接、状态和术语是否一致
 

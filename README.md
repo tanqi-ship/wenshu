@@ -5,11 +5,12 @@
 > **定位**：这是**学习与工程实践**项目，不是产品。
 > 目标是把「问数引擎为什么会不准」这件事拆到底，并给出可验证的答案。
 >
-> **当前状态**：M0、M1、M1.5、M2（6/6）、**M3 离线问数闭环（4/4）**及 **M4 离线评测（4/4）**已完成。
+> **当前状态**：M0、M1、M1.5、M2（6/6）、**M3 离线问数闭环（4/4）**及 **M4 离线评测（4/4）**已完成；
+> **M5.1 真实模型基线运行器已实现，尚未运行**。
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 /
 > 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL** / **同口径整体占比**），并且有一条命令能回答"引擎现在算得对不对"：
 > `uv run python -m scripts.check_golden`。最新测试与评测结果见 `docs/CONTEXT.md`。
-> **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；真实模型质量评测仍未进行。见 `docs/ROADMAP.md`。
+> **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；真实模型基线尚未运行，真实准确率仍未验证。见 `docs/ROADMAP.md`。
 
 ---
 
@@ -101,6 +102,8 @@
 **M3.4** 已将会话接到编译、校验与 SQLite 业务只读执行：只有 L4 无问题才执行，默认最多 100 行、查询预算 2 秒。
 **M4.1** 在问数入口把未登记指标归为 `UNANSWERABLE`，指标/表/列无权限归为 `OUT_OF_SCOPE`，两类拒绝不进入 L4/L5。
 **M4.3/M4.4** `scripts.evaluate` 一次跑完固定回放评测并按阶段归因失败。真实模型质量验收仍未进行。
+**M5.1** 真实模型基线运行器已实现（T0～T3）：前置检查、记录型客户端与预算、共享判定、四份报告；
+真实基线尚未运行，见 `docs/EVALUATION.md` 第 6 节。
 
 
 ---
@@ -155,6 +158,18 @@ uv run python -m scripts.evaluate            # 离线评测：抽取/澄清/黄�
 uv run python -m scripts.trace_compile       # 学习工具：把编译器五步逐个打出来
 ```
 
+真实模型基线是人工步骤，需要密钥，不在 CI 里跑：
+
+```powershell
+$env:WENSHU_LLM_MODE = 'real'
+$env:WENSHU_LLM_API_KEY = Read-Host 'DeepSeek API Key'
+$env:WENSHU_LLM_THINKING = 'disabled'
+uv run python -m scripts.evaluate_real --case EX-001 --repeats 1   # 冒烟
+uv run python -m scripts.evaluate_real                            # 全量
+```
+
+`eval/real/<run_id>/` 是运行产物，已忽略、不提交；结论写回 `docs/CONTEXT.md`。
+
 会话演示默认写入忽略目录 `build/clarification_sessions.db`。复制 start 返回的 `session_id` 后，
 可在新的终端/进程中继续（将下方占位符替换成真实 ID）：
 
@@ -199,7 +214,7 @@ AQ-001 全行返回 `20210000` 元，`B001` 范围返回 `12660000` 元。SS-002
 | `docs/GLOSSARY.md` | 项目术语统一表：架构、语义层、模型、评测、本体和工程流程 |
 | `docs/ARCHITECTURE.md` | 分层、数据流、编译器内部结构、错误分类、`Scope` 三个注入点 |
 | `docs/DECISIONS.md` | 已定的架构决策（ADR），每条都写了"什么情况下翻案" |
-| `docs/ROADMAP.md` | M0~M4 里程碑，每步的验收标准和对应评测用例 |
+| `docs/ROADMAP.md` | M0~M5 里程碑，每步的验收标准和对应评测用例 |
 | `docs/REFERENCES.md` | 读 askdb / auto-ontology **该读哪些文件**（学习地图，不是迁移计划） |
 | `ATTRIBUTION.md` | 代码来源与设计参考登记 |
 | `fixtures/sql/bank_fixture.sql` | 故意"脏"的测试库，文件末尾列了 D-01~D-11 共 11 项缺陷 |
@@ -227,7 +242,7 @@ wenshu/
 ├── eval/cases/             # 评测集（yaml，带 why_hard / covers）
 ├── eval/golden/            # 黄金集：cases.yaml + G-xxx.sql（手写标准答案）
 ├── fixtures/sql/           # 假银行库 DDL + 缺陷清单 D-01~D-11
-├── scripts/                # demo_ask / check_golden / golden / seed_fixture / trace_compile …
+├── scripts/                # demo_ask / check_golden / golden / evaluate_real / seed_fixture / trace_compile …
 ├── tests/                  # engine 单测（纯内存）+ cassettes
 └── docs/                   # 上下文 / 架构 / 决策 / 路线图 / 参考地图
 ```
