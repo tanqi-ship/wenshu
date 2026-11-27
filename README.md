@@ -16,7 +16,7 @@
 
 ## 一、范围：做什么，不做什么
 
-范围是这份文档里最重要的部分。**边界一旦模糊，项目就会变成第二个 askdb。**
+范围是这份文档里最重要的部分。**边界一旦模糊，项目就会越做越大。**
 
 ### ✅ 做
 
@@ -38,7 +38,7 @@
 | 场景管理 / 知识库管理 / 提示词后台 | 那是产品功能 |
 | 多数据源连接器 | 只 SQLite（默认）+ 可选 PostgreSQL（见 ADR-0006） |
 | 归因分析 / 图表 / 指标卡 / 明细导出 | 下游展示，不属于引擎 |
-| 迁移 askdb 的任何代码 | 见 ADR-0003。askdb 只作为**阅读标本**，见 `docs/REFERENCES.md` |
+| 从其他项目复制或迁移代码 | 全部自己写，只借鉴设计（见 ADR-0003） |
 
 ---
 
@@ -103,7 +103,7 @@
 **M4.1** 在问数入口把未登记指标归为 `UNANSWERABLE`，指标/表/列无权限归为 `OUT_OF_SCOPE`，两类拒绝不进入 L4/L5。
 **M4.3/M4.4** `scripts.evaluate` 一次跑完固定回放评测并按阶段归因失败。真实模型基线见下一条。
 **M5.1** 真实模型基线已运行一次（2026-11-27，run `20261127T064047Z-e239b55`；T0～T4 已合并）：前置检查、
-记录型客户端与预算、共享判定、四份报告；结果与归因见 `docs/CONTEXT.md` 第十一节。
+记录型客户端与预算、共享判定、四份报告；结果与归因见 `docs/CONTEXT.md` 第九节。
 
 
 ---
@@ -126,18 +126,14 @@
 
 `app/engine/validation/rules.py`、`ratio.py` 与 `org.py` 的 8 条规则，每条都有：稳定 problem code + 规则编号（`C-xx` / `R-xxx`）+ 单测。
 
-这不是凭空的偏好。NVIDIA auto-ontology 在它的 ReAct 提示词 docstring 里给出了他们的实测结论：
-
-> "rule blocks in the writer prompt **lost accuracy every time they were measured**"
-> —— `auto_ontology/retrieval/text_to_sql/react/prompts.py:7-10`
-
-**注意边界**：那是他们在「ReAct + 策略训练」语境下的结论，原句后半段是 "a policy being trained should learn conventions from reward, not from a list"。**本项目把它当假设，不当定论**——验证方式是黄金集评测（M4）。
+这不是凭空的偏好。让模型自由写 SQL、再用提示词里的规则去约束，等于规则只写在文字里而没有代码执行。
+**本项目把“规则进代码更准”当假设，不当定论**——验证方式是黄金集评测（M4）。
 
 ### 3. 重试必须携带原 SQL
 
 `ValidationResult.feedback()` 只生成问题清单，**原 SQL 必须由重试构造器一起回灌**。
 
-askdb 的重试只回传错误信息、不回传原 SQL，而 prompt 里却写着"优先在原 SQL 结构上做局部修复"——模型看不到原 SQL，所谓"修复"实际退化成重新抽签。
+只回传错误信息、不回传原 SQL 时，模型看不到自己上次写了什么，所谓"修复"实际退化成重新抽签。
 
 ---
 
@@ -210,15 +206,14 @@ AQ-001 全行返回 `20210000` 元，`B001` 范围返回 `12660000` 元。SS-002
 | 文档 | 看什么 |
 |---|---|
 | **`AGENTS.md`** | AI 和新会话的统一入口：读取顺序、硬边界、常用命令和完成标准 |
-| **`docs/CONTEXT.md`** | ★ **新会话/新同事先读这一份**：项目是什么、做到哪了、我们在替代 askdb 的哪一步、怎么跑、踩过哪些坑 |
-| `docs/DEVELOPMENT.md` | 双机切换、分支、提交、PR、测试门禁和 Definition of Done |
+| **`docs/CONTEXT.md`** | ★ **新会话先读这一份**：项目是什么、做到哪了、怎么跑、踩过哪些坑 |
+| `docs/DEVELOPMENT.md` | 单人开发流程、双机切换、提交、测试门禁和 Definition of Done |
 | `docs/EVALUATION.md` | 测试与评测的区别、黄金集纪律、指标定义和真实模型评测边界 |
-| `docs/GLOSSARY.md` | 项目术语统一表：架构、语义层、模型、评测、本体和工程流程 |
+| `docs/GLOSSARY.md` | 项目术语统一表：架构、语义层、模型、评测和工程流程 |
 | `docs/ARCHITECTURE.md` | 分层、数据流、编译器内部结构、错误分类、`Scope` 三个注入点 |
 | `docs/DECISIONS.md` | 已定的架构决策（ADR），每条都写了"什么情况下翻案" |
 | `docs/ROADMAP.md` | M0~M5 里程碑，每步的验收标准和对应评测用例 |
-| `docs/REFERENCES.md` | 读 askdb / auto-ontology **该读哪些文件**（学习地图，不是迁移计划） |
-| `ATTRIBUTION.md` | 代码来源与设计参考登记 |
+| `docs/superpowers/` | 过去功能的设计和实施记录，只在想知道“当初为什么这样做”时查 |
 | `fixtures/sql/bank_fixture.sql` | 故意"脏"的测试库，文件末尾列了 D-01~D-11 共 11 项缺陷 |
 | `eval/cases/*.yaml` | 评测集，每条必须有 `why_hard` + `covers` |
 | `eval/golden/` | 黄金集：`cases.yaml`（用例 = `Intent` + 指向黄金 SQL）+ `G-xxx.sql`（**手写**标准答案） |
@@ -246,7 +241,7 @@ wenshu/
 ├── fixtures/sql/           # 假银行库 DDL + 缺陷清单 D-01~D-11
 ├── scripts/                # demo_ask / check_golden / golden / evaluate_real / seed_fixture / trace_compile …
 ├── tests/                  # engine 单测（纯内存）+ cassettes
-└── docs/                   # 上下文 / 架构 / 决策 / 路线图 / 参考地图
+└── docs/                   # 上下文 / 架构 / 决策 / 路线图 / 历史设计记录
 ```
 
 ---
