@@ -329,7 +329,7 @@ demo_ask 与 trace_compile 可运行。独立样本 B001=100，代码前缀误�
 
 ---
 
-## M5 · 真实模型基线 ✅ 运行器实现完成，尚未运行（M5.1）
+## M5 · 真实模型基线 ✅ 运行器与文档已合并，尚未运行（M5.1）
 
 | 小步 | 内容 | 验收物 |
 |---|---|---|
@@ -343,7 +343,7 @@ demo_ask 与 trace_compile 可运行。独立样本 B001=100，代码前缀误�
 | T1 共享判定 | `scripts/judging.py`、`scripts/evaluate.py`；26 项测试，离线 71/71 |
 | T2 记录器与预算 | `scripts/call_recorder.py`；7 项测试 |
 | T3 运行器与报告 | `scripts/evaluate_real.py`；11 项测试，输出 `report.json`、`report.md`、`calls.jsonl`、`review.md` |
-| T4 文档与 PR | 本节、`EVALUATION.md`、`GLOSSARY.md`、`README.md`、`AGENTS.md`、`CONTEXT.md` |
+| T4 文档与 PR | 本节、`EVALUATION.md`、`GLOSSARY.md`、`README.md`、`AGENTS.md`、`CONTEXT.md`；PR #1 已 squash 合并为 `5aded78` |
 
 **验收状态**：运行器实现完成；前置检查、预算/连续 `transport` 中止、黄金对照、密钥不落盘与 `eval/real/` 忽略已验证；
 全量 1579 项测试、离线评测 71/71、Ruff 通过。

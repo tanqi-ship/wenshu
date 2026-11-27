@@ -83,7 +83,8 @@
 - [x] `README.md`：快速开始加命令，注明需要密钥、不在 CI 里跑。
 - [x] `AGENTS.md`：常用命令加 `evaluate_real`，注明是人工步骤。
 - [x] `docs/CONTEXT.md`：写成「实现完成，尚未运行」。
-- [ ] 推送分支，开 PR，等 Ruff、Pytest、Golden-set gate 三个 job 通过，自审后合并，拉回 `main`。
+- [x] 推送分支，开 PR #1，Ruff/Pytest/Golden-set gate 三个 job 通过后 squash 合并为 `5aded78`，拉回 `main`；
+  `postgres dialect` 可选 job 红是已知的 `seed_fixture` URL 写法问题，不阻塞本任务。
 
 ## 6. 人工步骤（需要密钥，不进 CI）
 
