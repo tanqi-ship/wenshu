@@ -20,6 +20,7 @@ from typing import Literal
 
 LLMMode = Literal["fake", "replay", "real"]
 EmbedMode = Literal["fake", "real"]
+ThinkingMode = Literal["", "enabled", "disabled"]
 
 
 def _env(name: str, default: str = "") -> str:
@@ -70,6 +71,7 @@ class Settings:
     llm_api_key: str = ""
     llm_model: str = ""
     llm_timeout_s: float = 120.0
+    llm_thinking: ThinkingMode = ""
 
     embed_mode: EmbedMode = "fake"
     embed_dim: int = 256
@@ -101,6 +103,7 @@ class Settings:
             llm_api_key=_env("WENSHU_LLM_API_KEY"),
             llm_model=_env("WENSHU_LLM_MODEL"),
             llm_timeout_s=_env_float("WENSHU_LLM_TIMEOUT_S", 120.0),
+            llm_thinking=_thinking(_env("WENSHU_LLM_THINKING")),
             embed_mode=_embed_mode(_env("WENSHU_EMBED_MODE", "fake")),
             embed_dim=_env_int("WENSHU_EMBED_DIM", 256),
             embed_base_url=_env("WENSHU_EMBED_BASE_URL"),
@@ -149,6 +152,13 @@ def _llm_mode(raw: str) -> LLMMode:
     value = (raw or "fake").lower()
     if value not in {"fake", "replay", "real"}:
         raise ValueError(f"WENSHU_LLM_MODE 必须是 fake / replay / real，当前为 {raw!r}")
+    return value  # type: ignore[return-value]
+
+
+def _thinking(raw: str) -> ThinkingMode:
+    value = (raw or "").lower()
+    if value not in {"", "enabled", "disabled"}:
+        raise ValueError(f"WENSHU_LLM_THINKING 必须是空 / enabled / disabled，当前为 {raw!r}")
     return value  # type: ignore[return-value]
 
 

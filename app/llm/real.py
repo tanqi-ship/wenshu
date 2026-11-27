@@ -32,6 +32,8 @@ class OpenAICompatLLM:
         model: str,
         default_timeout_s: float = 120.0,
         extra_headers: dict[str, str] | None = None,
+        thinking: str = "",
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not base_url:
             raise ValueError("base_url 不能为空")
@@ -42,6 +44,8 @@ class OpenAICompatLLM:
         self._model = model
         self._default_timeout_s = default_timeout_s
         self._extra_headers = dict(extra_headers or {})
+        self._thinking = thinking
+        self._transport = transport
 
     @property
     def model(self) -> str:
@@ -66,12 +70,14 @@ class OpenAICompatLLM:
             "max_tokens": max_tokens,
             "stream": False,
         }
+        if self._thinking:
+            payload["thinking"] = {"type": self._thinking}
 
         url = f"{self._base_url}/chat/completions"
         effective_timeout = timeout_s or self._default_timeout_s
 
         try:
-            async with httpx.AsyncClient(timeout=effective_timeout) as client:
+            async with httpx.AsyncClient(timeout=effective_timeout, transport=self._transport) as client:
                 response = await client.post(url, json=payload, headers=headers)
         except httpx.TimeoutException as exc:
             raise LLMTransportError(f"模型调用超时（{effective_timeout}s）：{url}") from exc

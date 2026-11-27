@@ -6,7 +6,7 @@ import argparse
 import asyncio
 import json
 import time
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -15,15 +15,14 @@ import yaml
 
 from app.engine.clarify import prepare_question
 from app.engine.clarify.session import ClarificationService, MemorySessionStore
-from app.engine.compiler import CompileError, compile_sql
-from app.engine.execution import ExecutionError, SQLiteExecutor
-from app.engine.query import QueryAnswer, QueryRejection, QueryService
+from app.engine.execution import SQLiteExecutor
+from app.engine.query import QueryService
 from app.engine.scope import Scope
 from app.engine.semantic.bank_mini import TABLE, semantic_catalog, validation_catalog
-from app.engine.semantic.models import intent_from_mapping
-from app.engine.validation import validate_sql
+from app.engine.understanding import ExtractionError, extract_intent
 from app.llm.replay import ReplayLLM
 from scripts.golden import CaseOutcome, evaluate_case, load_cases, load_eval_case_ids
+from scripts.judging import judge_execution, judge_extraction
 from scripts.seed_sqlite_business import seed_business
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,42 +84,17 @@ async def _evaluate_extraction() -> dict[str, Any]:
         llm = ReplayLLM(ROOT / case["cassette"], inner=None, strict=True)
         record = _record(case["id"], elapsed_ms=0, model_calls=0)
         try:
-            from app.engine.understanding import ExtractionError, extract_intent
-
             try:
                 result = await extract_intent(case["question"], semantic_catalog(), llm=llm)
             except ExtractionError as exc:
-                expected = case.get("expected_error")
-                if expected == exc.code and tuple(case.get("expected_fragments", ())) == exc.fragments:
-                    record["ok"] = True
-                    record["expected"] = expected
-                else:
-                    _fail(record, "understanding", exc.code, "抽取错误与手写预期不一致。")
+                verdict = judge_extraction(case, error=exc)
             else:
-                if case.get("expected_error"):
-                    _fail(record, "understanding", "UNEXPECTED_SUCCESS", "预期抽取失败，但模型回放成功。")
-                else:
-                    expected_intent = intent_from_mapping(case["expected"])
-                    if replace(result.intent, raw={}) != expected_intent:
-                        _fail(record, "understanding", "INTENT_MISMATCH", "Intent 与手写预期不一致。")
-                    elif case.get("compile_error"):
-                        try:
-                            compile_sql(result.intent, semantic_catalog())
-                        except CompileError as exc:
-                            record["ok"] = exc.code == case["compile_error"]
-                            if not record["ok"]:
-                                _fail(record, "compiler", exc.code, "预期编译错误码不一致。")
-                        else:
-                            _fail(record, "compiler", "UNEXPECTED_SUCCESS", "预期编译失败，但编译成功。")
-                    elif case.get("compile"):
-                        sql = compile_sql(result.intent, semantic_catalog())
-                        checked = validate_sql(sql, catalog=validation_catalog(), intent=result.intent)
-                        if checked.ok:
-                            record["ok"] = True
-                        else:
-                            _fail(record, "validation", checked.codes[0], "抽取结果生成的 SQL 未通过 L4。")
-                    else:
-                        record["ok"] = True
+                verdict = judge_extraction(case, intent=result.intent)
+            record["ok"] = verdict.ok
+            if verdict.ok and "expected" in verdict.details:
+                record["expected"] = verdict.details["expected"]
+            elif not verdict.ok:
+                _fail(record, verdict.stage, verdict.code, verdict.message)
         except Exception as exc:
             if record["failure"] is None:
                 _fail(record, "understanding", type(exc).__name__, "评测样本执行异常。")
@@ -219,6 +193,7 @@ async def _evaluate_execution() -> dict[str, Any]:
             validation_catalog(),
             SQLiteExecutor(business),
         )
+        case = {"expected": {"result": 20210000.0}}
         try:
             result = await service.start(
                 AQ_001_QUESTION,
@@ -226,16 +201,13 @@ async def _evaluate_execution() -> dict[str, Any]:
                 catalog_revision="bank-mini-v1",
                 scope=Scope.of([TABLE]),
             )
-            if isinstance(result, QueryAnswer) and result.result.rows == ((20210000.0,),):
-                record["ok"] = True
-            elif isinstance(result, QueryRejection):
-                _fail(record, "scope", result.code, result.message)
-            else:
-                _fail(record, "data", "RESULT_MISMATCH", "AQ-001 结果与手写预期不一致。")
-        except ExecutionError as exc:
-            _fail(record, "execution", exc.code, "本地业务 SQLite 执行失败。")
         except Exception as exc:
-            _fail(record, "compiler", type(exc).__name__, "端到端样本执行异常。")
+            verdict = judge_execution(case, error=exc)
+        else:
+            verdict = judge_execution(case, result)
+        record["ok"] = verdict.ok
+        if not verdict.ok:
+            _fail(record, verdict.stage, verdict.code, verdict.message)
         record["model_calls"] = llm.hits
     record["elapsed_ms"] = round((time.perf_counter() - started) * 1000, 3)
     return _suite("execution", [record])

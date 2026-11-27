@@ -43,6 +43,7 @@ def build_llm(settings: Settings, *, cassette: str | None = None) -> LLMClient:
         api_key=settings.llm_api_key,
         model=settings.llm_model,
         default_timeout_s=settings.llm_timeout_s,
+        thinking=settings.llm_thinking,
     )
 
 
@@ -70,6 +71,7 @@ def build_recorder(settings: Settings, *, cassette: str) -> ReplayLLM:
         api_key=settings.llm_api_key,
         model=settings.llm_model,
         default_timeout_s=settings.llm_timeout_s,
+        thinking=settings.llm_thinking,
     )
     path = build_cassette_path(settings.llm_cassette_dir, cassette)
     return ReplayLLM(path, inner=inner, strict=False)

@@ -102,7 +102,25 @@ eval/report.md
 
 ## 6. 真实模型评测
 
-真实模型评测尚未完成。进行时必须遵守：
+当前状态：运行器已实现（`scripts/evaluate_real.py`），真实基线**尚未运行**；未运行前不得声称真实准确率。
+
+运行方式（人工步骤，需要密钥，不在 CI）：
+
+```powershell
+$env:WENSHU_LLM_MODE = 'real'
+$env:WENSHU_LLM_API_KEY = Read-Host 'DeepSeek API Key'
+$env:WENSHU_LLM_THINKING = 'disabled'
+uv run python -m scripts.evaluate_real --case EX-001 --repeats 1   # 冒烟
+uv run python -m scripts.evaluate_real                            # 全量
+```
+
+- `--repeats` 默认 3；`--case` 可重复，用于冒烟；`--max-calls` 默认 200。
+- 前置条件：模式为 `real`、密钥非空、思考模式为 `disabled`、输出目录不存在；否则退出码 2，不发起调用。
+- 输出写到 `eval/real/<run_id>/`：`report.json`、`report.md`、`calls.jsonl`、`review.md`。该目录已忽略，**任何一次运行的产物都不提交**；原始输出只留在运行它的电脑。
+- 退出码：0 全部通过；1 有失败或未完成；2 前置检查失败；3 预算用完或连续 `transport` 失败中止。
+- 运行结束后把 run_id、所在电脑、两套指标、不稳定题和归因结论写回 `docs/CONTEXT.md`，措辞遵守第 9 节。
+
+进行时必须遵守：
 
 1. 明确模型名称、版本、温度、超时、prompt 版本和数据集版本。
 2. 使用固定问题集和固定验收标准。
@@ -119,12 +137,14 @@ eval/report.md
 
 ```text
 sample_id
-stage: understanding | clarification | semantic | scope | compiler | validation | execution | data
+stage: understanding | clarification | semantic | scope | compiler | validation | execution | data | transport
 code
 message
 expected
 actual
 ```
+
+`transport` 指超时、网络错误或非 2xx 响应；它单独归因，**不计入准确率分母**，受影响题标记为未完成。
 
 归因表比单一准确率更重要。它决定下一步应该改 prompt、语义层、编译器、校验器还是数据。
 
@@ -172,6 +192,7 @@ actual
 uv run pytest
 uv run python -m scripts.check_golden
 uv run python -m scripts.evaluate
+uv run python -m scripts.evaluate_real --case EX-001 --repeats 1   # 人工步骤，需要真实密钥
 uv run python -m scripts.demo_query start --case AQ-001
 ```
 
