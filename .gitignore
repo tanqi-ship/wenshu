@@ -84,6 +84,8 @@ eval/golden_summary.md
 eval/regression_summary.md
 eval/report.json
 eval/report.md
+# 真实模型基线的运行产物（每次运行重新生成，且可能含模型原文）
+eval/real/
 
 # =============================================================================
 #  以下内容**必须提交**，不要在这里加规则去忽略它们：

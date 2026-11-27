@@ -56,15 +56,15 @@
 
 ## 4. 运行器与报告（T3）
 
-- [ ] 新建 `scripts/evaluate_real.py`：
+- [x] 新建 `scripts/evaluate_real.py`：
   前置检查；`run` 接受可注入的客户端工厂，供测试替换；逐题逐次执行；汇总；落盘。
   参数：`--repeats`（默认 3）、`--case`（可重复，冒烟用）、`--max-calls`（默认 200）。
-- [ ] 执行套件用 `QueryService.start`，Scope 显式列出 fixture 的全部表，临时 SQLite 用 `seed_business` 灌数。
+- [x] 执行套件用 `QueryService.start`，Scope 显式列出 fixture 的全部表，临时 SQLite 用 `seed_business` 灌数。
   有黄金对照的题另记 `golden_matches`，复用 `scripts/golden.py` 的 `compare`。
-- [ ] 输出到 `eval/real/<run_id>/`：`report.json`、`report.md`、`calls.jsonl`、`review.md`。
+- [x] 输出到 `eval/real/<run_id>/`：`report.json`、`report.md`、`calls.jsonl`、`review.md`。
   中止或出错时在 `finally` 里把已有结果写完。元数据按 Spec 所列，git commit 用 `git rev-parse HEAD` 取。
-- [ ] 修改 `.gitignore`：加 `eval/real/`。
-- [ ] 新建 `tests/engine/test_evaluate_real.py`，用一个按问题返回手写 cassette 文本的假客户端：
+- [x] 修改 `.gitignore`：加 `eval/real/`。
+- [x] 新建 `tests/engine/test_evaluate_real.py`，用一个按问题返回手写 cassette 文本的假客户端：
   模式为 `replay`、密钥为空、思考模式未关闭、目录已存在时返回 2，客户端工厂一次都没被调用；
   预算触顶返回 3，已有结果落盘；全对率、多数通过率、不稳定题数的计算；
   `transport` 失败不进分母；Markdown 含固定的结论边界声明；密钥不出现在任何输出文件；
