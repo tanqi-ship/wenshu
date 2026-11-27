@@ -9,13 +9,13 @@
 
 ## 1. 客户端：关闭思考模式（T0）
 
-- [ ] 修改 `app/config.py`：`Settings` 增加 `llm_thinking`，默认空串；`from_env` 读 `WENSHU_LLM_THINKING`；
+- [x] 修改 `app/config.py`：`Settings` 增加 `llm_thinking`，默认空串；`from_env` 读 `WENSHU_LLM_THINKING`；
   新增解析函数，只接受空、`enabled`、`disabled`，其他值抛 `ValueError`。
-- [ ] 修改 `app/llm/real.py`：`OpenAICompatLLM` 增加 `thinking` 和 `transport` 两个构造参数。
+- [x] 修改 `app/llm/real.py`：`OpenAICompatLLM` 增加 `thinking` 和 `transport` 两个构造参数。
   `thinking` 非空时请求体加 `thinking` 对象，为空时请求体不变。`transport` 只给测试注入，默认为空。
-- [ ] 修改 `app/llm/factory.py`：`build_llm` 和 `build_recorder` 把 `settings.llm_thinking` 传给客户端。
-- [ ] 修改 `.env.example`：模型名改为 `deepseek-flash`，增加 `WENSHU_LLM_THINKING` 并写明三个取值。
-- [ ] 新建 `tests/engine/test_llm_real.py`，用 `httpx.MockTransport` 截获请求体：
+- [x] 修改 `app/llm/factory.py`：`build_llm` 和 `build_recorder` 把 `settings.llm_thinking` 传给客户端。
+- [x] 修改 `.env.example`：模型名改为 `deepseek-flash`，增加 `WENSHU_LLM_THINKING` 并写明三个取值。
+- [x] 新建 `tests/engine/test_llm_real.py`，用 `httpx.MockTransport` 截获请求体：
   不设时请求体的键与改动前完全一致；设 `disabled` 时带上该字段；`enabled` 同理；
   `Settings.from_env` 对空、合法、非法三种输入的行为；工厂在 real 模式下把设置传到客户端。
 
@@ -24,17 +24,19 @@
 
 ## 2. 抽出共享判定（T1）
 
-- [ ] 新建 `scripts/judging.py`：
+- [x] 新建 `scripts/judging.py`：
   `Verdict`（`ok`、`stage`、`code`、`message`、附加信息）；
   `judge_extraction`，规则照搬 `scripts/evaluate.py` 现有逻辑，不改判法；
   `judge_execution`，按 Spec 的三类结果形状、两条行为题判定；
   四个结果匹配函数，数值容差 1e-6。
-- [ ] 修改 `scripts/evaluate.py`：抽取和执行两处改为调用共享判定，删掉原来的内联判断。
-- [ ] 新建 `tests/engine/test_judging.py`，全部用手工构造的 Intent 和返回对象，不过模型：
+- [x] 修改 `scripts/evaluate.py`：抽取和执行两处改为调用共享判定，删掉原来的内联判断。
+- [x] 新建 `tests/engine/test_judging.py`，全部用手工构造的 Intent 和返回对象，不过模型：
   抽取的成功、预期错误、错误码不符、`compile_error`、预期失败却成功；
   执行的标量、按行键、按列名、多行、AQ-009、AQ-010，以及数值差一个容差外的反例。
-- [ ] 判定器自检：对 AQ-001 到 AQ-008，用正确的 Intent 走 `compile_sql` 和临时 SQLite，把结果交给判定器，
-  必须全部判对。这一步同时验证容差。**任何一条判错就停下来说明情况，不修改预期数字。**
+- [x] 判定器自检：对 AQ-001～005、008（可编译且 SQLite fixture 有对应表），用正确的 Intent 走 `compile_sql`
+  和临时 SQLite，把结果交给判定器，必须全部判对。这一步同时验证容差。**任何一条判错就停下来说明情况，不修改预期数字。**
+  AQ-006 的报表表未灌入 SQLite fixture、AQ-007 在语义层没有核销指标，二者改为用手工 QueryRows 覆盖
+  按行键/按列名匹配函数；此范围收窄已于 2026-11-27 经人工确认，不扩语义层或 fixture。
 
 验证：`uv run pytest tests/engine/test_judging.py tests/engine/test_evaluation_report.py`、
 `uv run python -m scripts.evaluate` 仍为 71/71、`uv run pytest` 全量。
