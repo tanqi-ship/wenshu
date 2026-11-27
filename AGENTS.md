@@ -16,7 +16,7 @@
 
 - 改开发流程、分支、PR、提交 → `docs/DEVELOPMENT.md`
 - 改评测、黄金集、报告、真实模型验收 → `docs/EVALUATION.md`
-- 功能任务 → 当前任务对应的 `docs/superpowers/specs/` 或 `docs/superpowers/plans/`
+- 功能任务 → 当前任务对应的 `docs/superpowers/specs/`（设计加末尾执行清单）；`docs/superpowers/plans/` 只有历史记录和少数大型任务的独立 Plan
 
 不要依赖聊天记录、模型记忆或 README 中的测试数量推断当前状态。当前状态只以 `docs/CONTEXT.md` 为准。
 
@@ -48,10 +48,12 @@
 非平凡改动必须遵循：
 
 ```text
-Issue -> Spec -> 人工确认 -> Plan -> 分支 -> 小步实现 -> 测试 -> PR -> CI -> 自审 -> 合并 -> 更新状态
+Issue -> Spec（含执行清单）-> 人工确认 -> 分支 -> 小步实现 -> 测试 -> PR -> CI -> 自审 -> 合并 -> 更新状态
 ```
 
-单人项目可以不建 Issue，用 `docs/superpowers/plans/` 里的任务清单作为入口，见 `docs/DEVELOPMENT.md` 4.1。
+单人项目可以不建 Issue，直接用 Spec 作为任务入口，见 `docs/DEVELOPMENT.md` 4.1 和 4.3。
+
+不单独写 Plan 文档：执行步骤写成 Spec 末尾的短清单，随 Spec 一起确认。只有实施顺序本身就是设计的任务（新模块、拆多个 PR、跨多次会话）才另写 Plan。
 
 简单 typo、文档修正、测试补充可以直接提交，但仍要跑相关检查。
 
@@ -90,8 +92,8 @@ uv run python -m scripts.evaluate_real   # 真实模型基线：人工步骤，�
 - 计划和历史写 `docs/ROADMAP.md`。
 - 稳定架构写 `docs/ARCHITECTURE.md`。
 - 重要决策写 `docs/DECISIONS.md` 的 ADR。
-- 功能设计写 `docs/superpowers/specs/`。
-- 实施计划写 `docs/superpowers/plans/`。
+- 功能设计和执行清单写 `docs/superpowers/specs/`。
+- 独立 Plan 只在 `docs/DEVELOPMENT.md` 4.3 列出的大型任务中才写，放 `docs/superpowers/plans/`；其中已有文件是历史记录，不迁移、不删除。
 - 术语写 `docs/GLOSSARY.md`。
 - README 只保留稳定概述、快速开始和文档索引，不维护易变的测试数量和进度。
 
@@ -111,7 +113,7 @@ uv run python -m scripts.evaluate_real   # 真实模型基线：人工步骤，�
 
 ```text
 1. 跑相关测试和静态检查
-2. 更新 plan 勾选状态
+2. 更新 Spec 末尾执行清单的勾选状态
 3. 更新 docs/CONTEXT.md 的当前状态和下一步
 4. 检查 git diff 只包含本任务
 5. commit 并 push
@@ -141,6 +143,6 @@ uv run python -m scripts.evaluate_real   # 真实模型基线：人工步骤，�
 - 需要引入新的模型调用、外部服务或生产数据。
 - 测试失败原因不明确，或需要修改黄金答案。
 - 发现现有文档与代码严重不一致。
-- 任务范围明显超出当前 Issue/Plan。
+- 任务范围明显超出当前 Issue 或已确认的 Spec。
 
 先说明冲突和可选方案，不要自行猜测并继续。
