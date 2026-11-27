@@ -353,6 +353,8 @@ demo_ask 与 trace_compile 可运行。独立样本 B001=100，代码前缀误�
 正式基线（run `20261127T064047Z-e239b55`）抽取全对 30%、多数 35%、尝试 35%；执行全对 20%、多数 30%、尝试 26.67%；
 不稳定题 EX-007、EX-010、AQ-005。T6 暴露的两个判定 bug 已由 PR #2（`e239b55`）修正。
 **M5.2 测量口径修正**：全量 1587 项测试、离线 71/71；round 1 基线中 AQ-006/007/008 不可直接与后续轮次比较，round 2 未运行。
+**EX-004 测量修正记录（2026-11-27）**：经人工确认，将抽取预期与手写 cassette 的 delta 时点统一为当前五月末、基准四月末，消息键和生产逻辑不变；新增独立候选正反判定及严格回放到 SQLite 的数值断言，4 项测试先失败再通过。保留 round 1 的原始报告与当时汇总；EX-004 的旧通过不能证明差值方向正确，无 compiler 阶段失败也不保证全部 SQL 业务语义正确。后续直接跨轮比较除 AQ-006/007/008 外再排除 EX-004，仍保留它参与 round 2。设计与实施见 [Spec](superpowers/specs/2026-11-27-ex004-delta-measurement-design.md) / [Plan](superpowers/plans/2026-11-27-ex004-delta-measurement-plan.md)，当前交付状态与验证结果见 `CONTEXT.md`。
+
 **未完成/下一步**：prompt 迭代（unresolved 逐字与月末归一化）、可配置语义层、PostgreSQL 闭环、本体/ReAct；真实用户准确率未验证。
 
 ---

@@ -50,6 +50,12 @@ def _cases() -> dict[str, dict]:
     return {case["id"]: case for case in payload}
 
 
+def _extraction_case(case_id: str) -> dict:
+    path = Path(__file__).resolve().parents[2] / "tests/fixtures/intent_extraction/cases.yaml"
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return next(case for case in payload["cases"] if case["id"] == case_id)
+
+
 # ---------------------------------------------------------------------------
 # 抽取判定
 # ---------------------------------------------------------------------------
@@ -146,6 +152,34 @@ def test_extraction_intent_mismatch_fails() -> None:
     verdict = judge_extraction(case, intent=intent)
     assert not verdict.ok
     assert verdict.code == "INTENT_MISMATCH"
+
+
+def test_ex004_current_then_base_passes() -> None:
+    case = _extraction_case("EX-004")
+    # 候选按题意独立手写，不从待验证的预期复制时点。
+    intent = intent_from_mapping(
+        {
+            "metric": "贷款余额",
+            "time": {"grain": "month_end", "points": ["2026-05-31", "2026-04-30"]},
+            "comparison": "delta",
+        }
+    )
+    verdict = judge_extraction(case, intent=intent)
+    assert verdict.ok, verdict
+
+
+def test_ex004_reversed_points_mismatch() -> None:
+    case = _extraction_case("EX-004")
+    intent = intent_from_mapping(
+        {
+            "metric": "贷款余额",
+            "time": {"grain": "month_end", "points": ["2026-04-30", "2026-05-31"]},
+            "comparison": "delta",
+        }
+    )
+    verdict = judge_extraction(case, intent=intent)
+    assert not verdict.ok, verdict
+    assert (verdict.stage, verdict.code) == ("understanding", "INTENT_MISMATCH")
 
 
 # ---------------------------------------------------------------------------
