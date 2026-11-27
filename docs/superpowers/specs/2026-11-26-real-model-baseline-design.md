@@ -1,6 +1,6 @@
 # M5.1：真实模型基线评测
 
-日期：2026-11-26。状态：**已确认（2026-11-26）**。实现计划见 `../plans/2026-11-26-real-model-baseline-plan.md`；运行器已实现，真实基线尚未运行。
+日期：2026-11-26。状态：**已确认（2026-11-26）**。实现计划见 `../plans/2026-11-26-real-model-baseline-plan.md`；运行器已实现并已运行一次正式基线（run_id `20261127T064047Z-e239b55`）。
 
 ## 背景
 
@@ -131,6 +131,8 @@ temperature 为 0 也不保证逐字可复现；结论不代表真实用户问�
 
 ```powershell
 $env:WENSHU_LLM_MODE = 'real'
+$env:WENSHU_LLM_BASE_URL = 'https://api.deepseek.com/v1'
+$env:WENSHU_LLM_MODEL = 'deepseek-flash'
 $env:WENSHU_LLM_API_KEY = Read-Host 'DeepSeek API Key'
 $env:WENSHU_LLM_THINKING = 'disabled'
 uv run python -m scripts.evaluate_real

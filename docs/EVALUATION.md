@@ -102,12 +102,14 @@ eval/report.md
 
 ## 6. 真实模型评测
 
-当前状态：运行器已实现（`scripts/evaluate_real.py`），真实基线**尚未运行**；未运行前不得声称真实准确率。
+当前状态：已运行一次正式基线（run_id `20261127T064047Z-e239b55`，2026-11-27，代码 `e239b55`）。结果与归因见 `docs/CONTEXT.md`；30 条规范问法、单模型单版本，不能当作真实用户准确率。
 
 运行方式（人工步骤，需要密钥，不在 CI）：
 
 ```powershell
 $env:WENSHU_LLM_MODE = 'real'
+$env:WENSHU_LLM_BASE_URL = 'https://api.deepseek.com/v1'
+$env:WENSHU_LLM_MODEL = 'deepseek-flash'
 $env:WENSHU_LLM_API_KEY = Read-Host 'DeepSeek API Key'
 $env:WENSHU_LLM_THINKING = 'disabled'
 uv run python -m scripts.evaluate_real --case EX-001 --repeats 1   # 冒烟

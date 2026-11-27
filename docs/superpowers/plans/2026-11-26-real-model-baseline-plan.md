@@ -82,21 +82,20 @@
 - [x] `docs/ROADMAP.md`：新增 M5 和 M5.1。
 - [x] `README.md`：快速开始加命令，注明需要密钥、不在 CI 里跑。
 - [x] `AGENTS.md`：常用命令加 `evaluate_real`，注明是人工步骤。
-- [x] `docs/CONTEXT.md`：写成「实现完成，尚未运行」。
+- [x] `docs/CONTEXT.md`：T4 写成「实现完成，尚未运行」；T7 已更新为「基线已运行」。
 - [x] 推送分支，开 PR #1，Ruff/Pytest/Golden-set gate 三个 job 通过后 squash 合并为 `5aded78`，拉回 `main`；
   `postgres dialect` 可选 job 红是已知的 `seed_fixture` URL 写法问题，不阻塞本任务。
 
 ## 6. 人工步骤（需要密钥，不进 CI）
 
-由你在自己的终端里运行，密钥不经过 AI。三行环境变量的写法见 Spec 的「预算与安全」。
+由你在自己的终端里运行，密钥不经过 AI。环境变量写法见 Spec 的「预算与安全」
+（需同时设置 `WENSHU_LLM_MODE`、`WENSHU_LLM_BASE_URL`、`WENSHU_LLM_MODEL`、`WENSHU_LLM_THINKING`、`WENSHU_LLM_API_KEY`）。
 
-- [ ] T5 冒烟：`uv run python -m scripts.evaluate_real --case EX-001 --repeats 1`。
-  看四样：退出码是 0 或 1 而不是 2 或 3；`calls.jsonl` 里 `finish_reason` 是 `stop`；单次耗时；token 数。
-  输出被截断、耗时不可接受或连续失败，就停下来查原因，不进 T6。
-- [ ] T6 全量：`uv run python -m scripts.evaluate_real`。运行期间不改代码、不改题、不改预期。记下 run_id。
-- [ ] T7 归因：逐条填 `review.md`，每条失败写阶段、原因和下一步动作。
-  把 run_id、所在电脑、两套指标、不稳定题和归因结论写进 `docs/CONTEXT.md`。
-  措辞遵守 `EVALUATION.md` 第 9 节：只说规范问法下、单模型单版本的结果。
+- [x] T5 冒烟：2026-11-27 完成。EX-001 单次；接口和格式正常，模型把“截至2026年4月末”放进了 `unresolved`；
+  未改 prompt。无效 key 的 401 轮次中止，不纳入基线。
+- [x] T6 全量：2026-11-27 完成。正式 run_id `20261127T064047Z-e239b55`，90 次调用、67,764 token。
+- [x] T7 归因：2026-11-27 完成。`review.md` 已填，`CONTEXT.md` 第十一节记录 run_id、指标、不稳定题和归因；
+  61 次失败全部在抽取/澄清，无 compiler/validation/execution/transport 失败。
 
 AI 在 T6 之后读取 `report.md` 和 `calls.jsonl` 协助归因，这两个文件不含密钥。
 

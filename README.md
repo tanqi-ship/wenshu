@@ -6,11 +6,11 @@
 > 目标是把「问数引擎为什么会不准」这件事拆到底，并给出可验证的答案。
 >
 > **当前状态**：M0、M1、M1.5、M2（6/6）、**M3 离线问数闭环（4/4）**及 **M4 离线评测（4/4）**已完成；
-> **M5.1 真实模型基线运行器与文档已合并，尚未运行**。
+> **M5.1 真实模型基线已运行一次（2026-11-27），结果见 docs/CONTEXT.md**。
 > 编译器能从 `Intent` 产出通过校验的 SQL（单指标 / 月末时点或区间 / 维度分组 / 业务过滤 /
 > 行级权限 / **双时点 delta 对比** / **每月 Top N** / **双表 INNER/LEFT JOIN** / **整月报表读取与多月 UNION ALL** / **同口径整体占比**），并且有一条命令能回答"引擎现在算得对不对"：
 > `uv run python -m scripts.check_golden`。最新测试与评测结果见 `docs/CONTEXT.md`。
-> **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；真实模型基线尚未运行，真实准确率仍未验证。见 `docs/ROADMAP.md`。
+> **尚未实现**：同比 / 环比 / 变化比率、全局 Top N、多跳 JOIN；真实模型基线只覆盖 30 条规范问法、单模型单版本，真实用户准确率仍未验证。见 `docs/ROADMAP.md`。
 
 ---
 
@@ -101,9 +101,9 @@
 专用补答静态指令 717 字符，固定样本消息内容合计 1398～1490 字符，不是 tokens；旧 prompt 精简目标仍未达。
 **M3.4** 已将会话接到编译、校验与 SQLite 业务只读执行：只有 L4 无问题才执行，默认最多 100 行、查询预算 2 秒。
 **M4.1** 在问数入口把未登记指标归为 `UNANSWERABLE`，指标/表/列无权限归为 `OUT_OF_SCOPE`，两类拒绝不进入 L4/L5。
-**M4.3/M4.4** `scripts.evaluate` 一次跑完固定回放评测并按阶段归因失败。真实模型质量验收仍未进行。
-**M5.1** 真实模型基线运行器与文档已完成并合并（PR #1，T0～T4）：前置检查、记录型客户端与预算、共享判定、四份报告；
-真实基线尚未运行，见 `docs/EVALUATION.md` 第 6 节。
+**M4.3/M4.4** `scripts.evaluate` 一次跑完固定回放评测并按阶段归因失败。真实模型基线见下一条。
+**M5.1** 真实模型基线已运行一次（2026-11-27，run `20261127T064047Z-e239b55`；T0～T4 已合并）：前置检查、
+记录型客户端与预算、共享判定、四份报告；结果与归因见 `docs/CONTEXT.md` 第十一节。
 
 
 ---
@@ -162,6 +162,8 @@ uv run python -m scripts.trace_compile       # 学习工具：把编译器五步
 
 ```powershell
 $env:WENSHU_LLM_MODE = 'real'
+$env:WENSHU_LLM_BASE_URL = 'https://api.deepseek.com/v1'
+$env:WENSHU_LLM_MODEL = 'deepseek-flash'
 $env:WENSHU_LLM_API_KEY = Read-Host 'DeepSeek API Key'
 $env:WENSHU_LLM_THINKING = 'disabled'
 uv run python -m scripts.evaluate_real --case EX-001 --repeats 1   # 冒烟
