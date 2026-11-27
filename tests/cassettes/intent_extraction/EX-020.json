@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "d46e2f32cd559d9d": {
+    "39df27b6ff619117": {
       "text": "{\"metrics\":[\"不良贷款率\"],\"time\":{\"grain\":\"month_end\",\"points\":[\"2026-04-30\"]},\"unresolved\":[]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,

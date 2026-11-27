@@ -64,7 +64,7 @@ async def test_only_time_replaced_and_protocol_isolated():
     assert replace(last.intent, time_range=None) == old
     assert llm.call_count == 2
     assert '"protocol_version":"slot-reply-v1"' in llm.calls[1].last_user_content
-    assert "intent-extraction-v1" not in llm.calls[1].last_user_content
+    assert "intent-extraction-v2" not in llm.calls[1].last_user_content
     assert store.get("alice", first.session_id).reply_diagnostics[0]["answer"] == "2026年4月末"
     assert last.completion.text == json.dumps(PATCH, ensure_ascii=False)
 

@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "64449a2c3bd2e5ab": {
+    "781a560dbc194e2f": {
       "text": "{\"metrics\":[],\"time\":{\"grain\":\"month_end\",\"points\":[\"2026-04-30\"]},\"unresolved\":[]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,

@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "c69810a2814b0cce": {
+    "bc7e79a97c8007da": {
       "text": "{\"metrics\":[\"贷款余额\"],\"time\":{\"grain\":\"month_end\",\"points\":[\"2026-04-30\"]},\"dimensions\":[\"机构\"],\"top_n\":2,\"unresolved\":[]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,

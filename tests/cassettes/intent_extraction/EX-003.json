@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "16d3abbd447ecacb": {
+    "efbe4d48f648d68e": {
       "text": "{\"metrics\":[\"不良贷款余额\"],\"time\":{\"grain\":\"month_end\",\"points\":[\"2026-04-30\"]},\"dimensions\":[\"机构\",\"产品\"],\"unresolved\":[]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,

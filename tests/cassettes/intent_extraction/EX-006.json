@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "37e41501a155bbdd": {
+    "38330034ccb319b3": {
       "text": "{\"metrics\":[\"不良贷款率\"],\"time\":{\"grain\":\"month\",\"points\":[\"2026-04-30\"]},\"dimensions\":[\"产品\"],\"source_mode\":\"report\",\"unresolved\":[]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,
