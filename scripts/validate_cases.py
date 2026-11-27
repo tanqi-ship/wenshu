@@ -73,6 +73,17 @@ def validate_case(case: dict[str, Any], *, seen: set[str]) -> list[str]:
     if not has_sql and not (expected.get("behavior") or expected.get("result")):
         problems.append(f"[{case_id}] 没有 standard_sql 时，expected 必须给出 behavior 或 result")
 
+    measurement = case.get("measurement")
+    if measurement is not None:
+        if not isinstance(measurement, dict):
+            problems.append(f"[{case_id}] measurement 必须是映射")
+        else:
+            status = str(measurement.get("status") or "").strip()
+            if status != "excluded":
+                problems.append(f"[{case_id}] measurement.status 只能是 excluded，当前为 {status!r}")
+            if not str(measurement.get("reason") or "").strip():
+                problems.append(f"[{case_id}] measurement.reason 不能为空")
+
     return problems
 
 
