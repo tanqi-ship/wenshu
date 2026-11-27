@@ -123,6 +123,13 @@ def _matches_result(rows: QueryRows, expected: object) -> bool:
     return False
 
 
+def _strip_raw(intent: Intent) -> Intent:
+    """比较前去掉所有 raw 展示字段；它们不属于抽取契约。"""
+    time_range = replace(intent.time_range, raw="") if intent.time_range is not None else None
+    filters = tuple(replace(item, raw="") for item in intent.filters)
+    return replace(intent, time_range=time_range, filters=filters, raw={})
+
+
 def judge_extraction(
     case: Mapping[str, Any],
     *,
@@ -143,7 +150,7 @@ def judge_extraction(
         return _fail("understanding", "UNEXPECTED_SUCCESS", "预期抽取失败，但模型回放成功。")
 
     expected_intent = intent_from_mapping(case["expected"])
-    if replace(intent, raw={}) != expected_intent:
+    if _strip_raw(intent) != _strip_raw(expected_intent):
         return _fail("understanding", "INTENT_MISMATCH", "Intent 与手写预期不一致。")
 
     semantic = semantic or semantic_catalog()
@@ -173,6 +180,8 @@ def _incomplete_session(result: object) -> bool:
 
 
 def _judge_error(error: Exception) -> Verdict:
+    if isinstance(error, ExtractionError):
+        return _fail("understanding", error.code, "模型输出不符合抽取协议。")
     if isinstance(error, ExecutionError):
         return _fail("execution", error.code, "本地业务 SQLite 执行失败。")
     if isinstance(error, QueryValidationError):

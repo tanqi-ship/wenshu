@@ -7,6 +7,7 @@ AQ-001～005、008；AQ-006/AQ-007 用本文件手工构造的 QueryRows 覆盖�
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -64,6 +65,25 @@ def test_extraction_success() -> None:
     }
     verdict = judge_extraction(case, intent=intent_from_mapping(case["expected"]))
     assert verdict.ok
+
+
+def test_extraction_ignores_raw_display_fields() -> None:
+    case = {
+        "expected": {
+            "metric": "贷款余额",
+            "time": {"grain": "month_end", "points": ["2026-04-30"]},
+            "filters": [{"dimension": "机构", "value": "渝北"}],
+        },
+        "compile": True,
+    }
+    expected = intent_from_mapping(case["expected"])
+    intent = replace(
+        expected,
+        time_range=replace(expected.time_range, raw="2026年4月末"),
+        filters=tuple(replace(item, raw="渝北") for item in expected.filters),
+        raw={"model": "ok"},
+    )
+    assert judge_extraction(case, intent=intent).ok
 
 
 def test_extraction_expected_error_matches() -> None:
@@ -220,6 +240,14 @@ def test_execution_rejection_is_scope_failure_for_result_case() -> None:
     assert not verdict.ok
     assert verdict.stage == "scope"
     assert verdict.code == "OUT_OF_SCOPE"
+
+
+def test_execution_extraction_error_is_understanding() -> None:
+    error = ExtractionError("EXTRACTION_SCHEMA_INVALID", "协议错误", path="unresolved[0]")
+    verdict = judge_execution({"expected": {"result": 20210000.0}}, error=error)
+    assert not verdict.ok
+    assert verdict.stage == "understanding"
+    assert verdict.code == "EXTRACTION_SCHEMA_INVALID"
 
 
 # ---------------------------------------------------------------------------
