@@ -201,6 +201,40 @@ async def test_execution_case_records_golden_match(tmp_path: Path) -> None:
     assert execution["attempts_detail"][0]["golden_matches"] is True
 
 
+async def test_execution_extraction_error_is_attributed_to_understanding(tmp_path: Path) -> None:
+    invalid = json.dumps(
+        {
+            "metrics": ["贷款余额"],
+            "unresolved": ["2026年4月末（未确认）"],
+            "time": None,
+            "dimensions": [],
+            "filters": [],
+            "comparison": None,
+            "top_n": None,
+            "top_n_grain": None,
+            "source_mode": "plain",
+            "share": None,
+        },
+        ensure_ascii=False,
+    )
+    inner = _QuestionLLM({AQ_001_QUESTION: invalid})
+    code = await run(
+        _settings(),
+        repeats=1,
+        case_ids=["AQ-001"],
+        max_calls=10,
+        output_root=tmp_path,
+        run_id="execution-error",
+        client_factory=_factory(inner),
+    )
+
+    assert code == 1
+    report = json.loads((tmp_path / "execution-error/report.json").read_text(encoding="utf-8"))
+    attempt = report["suites"][1]["attempts_detail"][0]
+    assert attempt["stage"] == "understanding"
+    assert attempt["code"] == "EXTRACTION_SCHEMA_INVALID"
+
+
 def test_summary_counts_full_majority_unstable_and_transport() -> None:
     attempts: list[dict[str, Any]] = []
     attempts += [{"case_id": "A", "attempt": n, "ok": True, "transport": False} for n in (1, 2, 3)]

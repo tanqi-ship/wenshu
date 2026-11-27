@@ -331,7 +331,7 @@ async def _run_execution(
             except Exception as exc:
                 verdict = (
                     judge_execution(case, error=exc)
-                    if isinstance(exc, (CompileError, QueryValidationError, ExecutionError))
+                    if isinstance(exc, (ExtractionError, CompileError, QueryValidationError, ExecutionError))
                     else _error_verdict(exc)
                 )
                 golden_matches = None
