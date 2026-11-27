@@ -14,7 +14,7 @@ import json
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -156,7 +156,29 @@ def _transport_attempt(
     )
 
 
-def summarize_suite(name: str, attempts: Sequence[dict[str, Any]], repeats: int) -> dict[str, Any]:
+def _exclusion_reason(case: Mapping[str, Any]) -> str | None:
+    measurement = case.get("measurement")
+    if measurement is None:
+        return None
+    if not isinstance(measurement, Mapping):
+        raise ValueError(f"用例 {case.get('id')} 的 measurement 必须是映射。")
+    status = str(measurement.get("status") or "").strip()
+    if not status:
+        return None
+    if status != "excluded":
+        raise ValueError(f"用例 {case.get('id')} 的 measurement.status 只能是 excluded，当前为 {status!r}。")
+    reason = str(measurement.get("reason") or "").strip()
+    if not reason:
+        raise ValueError(f"用例 {case.get('id')} 的 measurement.reason 不能为空。")
+    return reason
+
+
+def summarize_suite(
+    name: str,
+    attempts: Sequence[dict[str, Any]],
+    repeats: int,
+    excluded_cases: Sequence[Mapping[str, Any]] = (),
+) -> dict[str, Any]:
     """按题汇总：全对率、多数通过率、不稳定题；transport 不进准确率分母。"""
     by_case: dict[str, list[dict[str, Any]]] = {}
     for attempt in attempts:
@@ -184,12 +206,13 @@ def summarize_suite(name: str, attempts: Sequence[dict[str, Any]], repeats: int)
 
     counted = [attempt for attempt in attempts if not attempt.get("transport")]
     ok_attempts = sum(1 for attempt in counted if attempt.get("ok"))
-    total_cases = len(by_case)
+    total_cases = len(by_case) + len(excluded_cases)
     return {
         "name": name,
         "total_cases": total_cases,
         "completed_cases": len(completed_cases),
         "incomplete_cases": incomplete_cases,
+        "excluded_cases": [dict(item) for item in excluded_cases],
         "full_pass_cases": len(full_pass_cases),
         "full_pass_rate": _rate(len(full_pass_cases), len(completed_cases)),
         "majority_pass_cases": len(majority_pass_cases),
@@ -296,8 +319,16 @@ async def _run_execution(
     database: Path,
     scope: Scope,
     golden_cases: dict[str, Any],
+    excluded_cases: list[dict[str, Any]],
 ) -> None:
+    measured: list[dict[str, Any]] = []
     for case in cases:
+        reason = _exclusion_reason(case)
+        if reason is None:
+            measured.append(case)
+        else:
+            excluded_cases.append({"suite": "execution", "case_id": str(case["id"]), "reason": reason})
+    for case in measured:
         for attempt_no in range(1, repeats + 1):
             started = time.perf_counter()
             call_start = recorder.call_count
@@ -436,6 +467,7 @@ def _build_report(
     recorder: RecordingLLM,
     extraction_attempts: Sequence[dict[str, Any]],
     execution_attempts: Sequence[dict[str, Any]],
+    excluded_cases: Sequence[Mapping[str, Any]],
     case_ids: Sequence[str] | None,
     repeats: int,
     max_calls: int,
@@ -445,7 +477,7 @@ def _build_report(
 ) -> dict[str, Any]:
     suites = [
         summarize_suite("extraction", extraction_attempts, repeats),
-        summarize_suite("execution", execution_attempts, repeats),
+        summarize_suite("execution", execution_attempts, repeats, excluded_cases),
     ]
     all_attempts = [*extraction_attempts, *execution_attempts]
     failed = any(not attempt["ok"] for attempt in all_attempts)
@@ -494,15 +526,16 @@ def _render_markdown(report: dict[str, Any]) -> str:
         "",
         "## 套件汇总",
         "",
-        "| 套件 | 总题 | 完成题 | 全对率 | 多数通过率 | 不稳定题 | 未完成题 | 尝试准确率 | 模型调用 | 耗时(ms) |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| 套件 | 总题 | 完成题 | 排除题 | 全对率 | 多数通过率 | 不稳定题 | 未完成题 | 尝试准确率 | 模型调用 | 耗时(ms) |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for suite in report["suites"]:
         lines.append(
             f"| {suite['name']} | {suite['total_cases']} | {suite['completed_cases']} | "
-            f"{suite['full_pass_rate']:.2%} | {suite['majority_pass_rate']:.2%} | "
-            f"{len(suite['unstable_cases'])} | {len(suite['incomplete_cases'])} | "
-            f"{suite['attempt_accuracy']:.2%} | {suite['model_calls']} | {suite['elapsed_ms']:.3f} |"
+            f"{len(suite['excluded_cases'])} | {suite['full_pass_rate']:.2%} | "
+            f"{suite['majority_pass_rate']:.2%} | {len(suite['unstable_cases'])} | "
+            f"{len(suite['incomplete_cases'])} | {suite['attempt_accuracy']:.2%} | "
+            f"{suite['model_calls']} | {suite['elapsed_ms']:.3f} |"
         )
 
     failures = [
@@ -536,6 +569,14 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append("\n".join(incomplete) if incomplete else "无。")
     lines.append("transport 失败不计入准确率分母；受影响题在完成题中排除。")
 
+    lines += ["", "## 排除题（不计入准确率）", ""]
+    excluded = [
+        f"{suite['name']}：{item['case_id']}（{item['reason']}）"
+        for suite in report["suites"]
+        for item in suite["excluded_cases"]
+    ]
+    lines.append("\n".join(excluded) if excluded else "无。")
+
     lines += ["", "## 结论边界", "", CONCLUSION_BOUNDARY, ""]
     return "\n".join(lines)
 
@@ -568,7 +609,6 @@ def _render_review(
     ]
     if not failures:
         lines.append("无失败样本。")
-        return "\n".join(lines) + "\n"
 
     for attempt in failures:
         case = (
@@ -587,6 +627,14 @@ def _render_review(
             "- 下一步动作：",
             "",
         ]
+
+    excluded = [
+        f"- {suite['name']} / {item['case_id']}：{item['reason']}"
+        for suite in report["suites"]
+        for item in suite["excluded_cases"]
+    ]
+    if excluded:
+        lines += ["", "## 排除题（不计入准确率）", "", *excluded, ""]
     return "\n".join(lines)
 
 
@@ -686,6 +734,7 @@ async def run(
     started_at = datetime.now(UTC)
     extraction_attempts: list[dict[str, Any]] = []
     execution_attempts: list[dict[str, Any]] = []
+    excluded_cases: list[dict[str, Any]] = []
     aborted = False
     budget_exhausted = False
     abort_reason = ""
@@ -705,6 +754,7 @@ async def run(
                 database=database,
                 scope=scope,
                 golden_cases=golden_cases,
+                excluded_cases=excluded_cases,
             )
     except BudgetExhausted as exc:
         aborted = True
@@ -726,6 +776,7 @@ async def run(
             recorder=recorder,
             extraction_attempts=extraction_attempts,
             execution_attempts=execution_attempts,
+            excluded_cases=excluded_cases,
             case_ids=case_ids,
             repeats=repeats,
             max_calls=max_calls,
@@ -744,7 +795,9 @@ async def run(
     if aborted:
         return 3
     all_attempts = [*extraction_attempts, *execution_attempts]
-    if not all_attempts or any(not attempt["ok"] for attempt in all_attempts):
+    if not all_attempts:
+        return 0 if excluded_cases else 1
+    if any(not attempt["ok"] for attempt in all_attempts):
         return 1
     if any(suite["incomplete_cases"] for suite in report["suites"]):
         return 1

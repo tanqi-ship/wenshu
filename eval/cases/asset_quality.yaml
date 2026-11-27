@@ -122,7 +122,7 @@
   covers: [D-07, C-11]
 
 - id: AQ-006
-  question: "2026年4月各产品的不良率是多少？"
+  question: "从报表查询2026年4月各产品的不良贷款率是多少？"
   difficulty: hard
   standard_sql: |
     SELECT prd_no, MAX(prd_nm) AS prd_nm, npl_rate
@@ -164,6 +164,9 @@
     result:
       writeoff_principal: 700000.00
       recovered_amount: 150000.00
+  measurement:
+    status: excluded
+    reason: "演示语义层没有核销指标，单 Intent 无法产出两列结果"
   why_hard: |
     ① 核销表的时间字段是 writeoff_date（业务日期），不是 etl_dt（快照）——
        同一张库里两种时间语义并存，选错就会得到 0 行。
@@ -173,7 +176,7 @@
   covers: [D-02, C-03, C-04]
 
 - id: AQ-008
-  question: "2026年每个月，贷款余额最高的支行是哪个、余额多少？"
+  question: "2026年1月到4月，每个月贷款余额最高的支行是哪个、余额多少？"
   difficulty: hard
   standard_sql: |
     WITH monthly AS (

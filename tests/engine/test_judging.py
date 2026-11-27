@@ -312,6 +312,21 @@ def test_row_key_matcher_covers_report_case() -> None:
     assert judge_execution({"expected": expected}, _answer(rows)).ok
 
 
+def test_row_key_matcher_finds_key_column_not_first() -> None:
+    expected = _cases()["AQ-006"]["expected"]
+    rows = QueryRows(
+        columns=("stat_month", "prd_no", "prd_nm", "npl_ratio"),
+        rows=(
+            ("202604", "LP01", "个人住房贷款", 0.0),
+            ("202604", "LP03", "小微企业贷款", 0.1407),
+            ("202604", "LP05", "流动资金贷款", 0.0),
+            ("202604", "LP07", "消费贷款", 0.3),
+        ),
+        truncated=False,
+    )
+    assert judge_execution({"expected": expected}, _answer(rows)).ok
+
+
 def test_column_name_matcher_covers_writeoff_case() -> None:
     expected = _cases()["AQ-007"]["expected"]
     rows = QueryRows(

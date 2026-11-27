@@ -59,21 +59,36 @@ def match_scalar(rows: QueryRows, expected: float) -> bool:
 
 
 def match_by_row_key(rows: QueryRows, expected: Mapping[str, object]) -> bool:
-    """按行键映射：每个键对应唯一一行，行数相等，其余单元格有一个数值匹配。"""
-    if not rows.columns or len(rows.rows) != len(expected):
+    """按行键映射：找到能唯一匹配所有预期键的列，行数相等，其余单元格有一个数值匹配。"""
+    if not rows.columns or len(rows.rows) != len(expected) or not expected:
         return False
-    used: set[int] = set()
-    for key, value in expected.items():
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return False
-        matches = [index for index, row in enumerate(rows.rows) if row and str(row[0]) == str(key)]
-        if len(matches) != 1:
-            return False
-        index = matches[0]
-        used.add(index)
-        if not any(_numbers_close(cell, float(value)) for cell in rows.rows[index][1:]):
-            return False
-    return len(used) == len(expected)
+    keys = {str(key) for key in expected}
+    candidates = [
+        index
+        for index in range(len(rows.columns))
+        if keys <= {str(row[index]) for row in rows.rows if len(row) > index}
+    ]
+    for key_index in candidates:
+        matches = {
+            key: [
+                row_index
+                for row_index, row in enumerate(rows.rows)
+                if len(row) > key_index and str(row[key_index]) == key
+            ]
+            for key in keys
+        }
+        if not all(len(indexes) == 1 for indexes in matches.values()):
+            continue
+        for key, value in expected.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False
+            row = rows.rows[matches[str(key)][0]]
+            if not any(
+                _numbers_close(cell, float(value)) for index, cell in enumerate(row) if index != key_index
+            ):
+                return False
+        return True
+    return False
 
 
 def match_by_column_name(rows: QueryRows, expected: Mapping[str, object]) -> bool:

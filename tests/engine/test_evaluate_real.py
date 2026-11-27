@@ -18,13 +18,22 @@ import pytest
 
 from app.config import Settings
 from app.llm.protocol import Completion, Message
-from scripts.evaluate_real import CONCLUSION_BOUNDARY, REAL_DIR, run, summarize_suite
+from scripts.evaluate_real import (
+    CONCLUSION_BOUNDARY,
+    REAL_DIR,
+    _exclusion_reason,
+    run,
+    summarize_suite,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 EX_001_CASSETTE = ROOT / "tests/cassettes/intent_extraction/EX-001.json"
+EX_006_CASSETTE = ROOT / "tests/cassettes/intent_extraction/EX-006.json"
 AQ_001_CASSETTE = ROOT / "tests/cassettes/query_execution/AQ-001.json"
 EX_001_QUESTION = "截至2026年4月末全行贷款余额"
 AQ_001_QUESTION = "2026年4月末全行贷款余额是多少？"
+AQ_006_QUESTION = "从报表查询2026年4月各产品的不良贷款率是多少？"
+AQ_008_QUESTION = "2026年1月到4月，每个月贷款余额最高的支行是哪个、余额多少？"
 
 
 def _settings(**overrides: Any) -> Settings:
@@ -199,6 +208,102 @@ async def test_execution_case_records_golden_match(tmp_path: Path) -> None:
     execution = report["suites"][1]
     assert execution["total_cases"] == 1
     assert execution["attempts_detail"][0]["golden_matches"] is True
+
+
+async def test_aq006_report_case_executes_on_sqlite(tmp_path: Path) -> None:
+    inner = _QuestionLLM({AQ_006_QUESTION: _cassette_text(EX_006_CASSETTE)})
+    code = await run(
+        _settings(),
+        repeats=1,
+        case_ids=["AQ-006"],
+        max_calls=10,
+        output_root=tmp_path,
+        run_id="aq006",
+        client_factory=_factory(inner),
+    )
+
+    assert code == 0
+    report = json.loads((tmp_path / "aq006/report.json").read_text(encoding="utf-8"))
+    execution = report["suites"][1]
+    attempt = execution["attempts_detail"][0]
+    assert attempt["ok"]
+    assert attempt["golden_matches"] is True
+
+
+async def test_aq008_explicit_range_case_executes(tmp_path: Path) -> None:
+    response = json.dumps(
+        {
+            "metrics": ["贷款余额"],
+            "unresolved": [],
+            "time": {
+                "grain": "month",
+                "start": "2026-01-01",
+                "end": "2026-04-30",
+            },
+            "dimensions": ["机构"],
+            "filters": [],
+            "comparison": None,
+            "top_n": 1,
+            "top_n_grain": "month",
+            "source_mode": "plain",
+            "share": None,
+        },
+        ensure_ascii=False,
+    )
+    inner = _QuestionLLM({AQ_008_QUESTION: response})
+    code = await run(
+        _settings(),
+        repeats=1,
+        case_ids=["AQ-008"],
+        max_calls=10,
+        output_root=tmp_path,
+        run_id="aq008",
+        client_factory=_factory(inner),
+    )
+
+    assert code == 0
+    report = json.loads((tmp_path / "aq008/report.json").read_text(encoding="utf-8"))
+    execution = report["suites"][1]
+    attempt = execution["attempts_detail"][0]
+    assert attempt["ok"]
+    assert attempt["golden_matches"] is True
+
+
+async def test_excluded_case_is_reported_and_not_counted(tmp_path: Path) -> None:
+    inner = _QuestionLLM({AQ_001_QUESTION: _cassette_text(AQ_001_CASSETTE)})
+    code = await run(
+        _settings(),
+        repeats=1,
+        case_ids=["AQ-001", "AQ-007"],
+        max_calls=10,
+        output_root=tmp_path,
+        run_id="excluded",
+        client_factory=_factory(inner),
+    )
+
+    assert code == 0
+    report = json.loads((tmp_path / "excluded/report.json").read_text(encoding="utf-8"))
+    execution = report["suites"][1]
+    assert execution["total_cases"] == 2
+    assert execution["completed_cases"] == 1
+    assert execution["excluded_cases"] == [
+        {
+            "suite": "execution",
+            "case_id": "AQ-007",
+            "reason": "演示语义层没有核销指标，单 Intent 无法产出两列结果",
+        }
+    ]
+    assert len(execution["attempts_detail"]) == 1
+    markdown = (tmp_path / "excluded/report.md").read_text(encoding="utf-8")
+    assert "排除题" in markdown
+    assert "AQ-007" in markdown
+
+
+def test_measurement_status_is_fail_closed() -> None:
+    with pytest.raises(ValueError, match=r"measurement\.status"):
+        _exclusion_reason({"id": "X", "measurement": {"status": "skip", "reason": "原因"}})
+    with pytest.raises(ValueError, match=r"measurement\.reason"):
+        _exclusion_reason({"id": "X", "measurement": {"status": "excluded", "reason": ""}})
 
 
 async def test_execution_extraction_error_is_attributed_to_understanding(tmp_path: Path) -> None:
