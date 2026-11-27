@@ -1,5 +1,7 @@
 """严格固定回放 → 独立手写 Intent → 既有 L3/L4，不更改黄金 SQL。"""
 
+import sqlite3
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 
@@ -52,6 +54,58 @@ async def test_fixed_replay(case, monkeypatch):
                 compile_sql(result.intent, semantic_catalog())
             assert exc.value.code == case["compile_error"]
     assert (llm.hits, llm.misses) == (1, 0)
+
+
+@pytest.mark.parametrize(
+    ("reverse_points", "expected"),
+    [
+        pytest.param(
+            False,
+            {"cur_balance": 130, "base_balance": 100, "delta": 30},
+            id="current_then_base",
+        ),
+        pytest.param(
+            True,
+            {"cur_balance": 100, "base_balance": 130, "delta": -30},
+            id="reversed_points",
+        ),
+    ],
+)
+async def test_ex004_replay_delta_values(
+    reverse_points: bool, expected: dict[str, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def forbidden(*args, **kwargs):
+        pytest.fail("离线回归禁止真实模型调用")
+
+    monkeypatch.setattr("app.llm.real.OpenAICompatLLM.complete", forbidden)
+    case = next(case for case in CASES if case["id"] == "EX-004")
+    llm = ReplayLLM(case["cassette"], inner=None, strict=True)
+    result = await extract_intent(case["question"], semantic_catalog(), llm=llm)
+    assert (llm.hits, llm.misses) == (1, 0)
+    assert result.completion.model == "synthetic/handwritten-fixture"
+    assert result.completion.total_tokens == 0
+    assert result.completion.meta == {"replayed": True}
+
+    intent = result.intent
+    assert intent.time_range is not None
+    if reverse_points:
+        intent = replace(intent, time_range=replace(intent.time_range, points=intent.time_range.points[::-1]))
+    scope = Scope.of([TABLE])
+    sql = compile_sql(intent, semantic_catalog(), scope=scope, dialect="sqlite")
+    checked = validate_sql(sql, catalog=validation_catalog(), intent=intent, scope=scope, dialect="sqlite")
+    assert checked.ok, checked.codes
+
+    # 数据与三列结果独立手写，防止响应和预期同时写反仍然通过。
+    with closing(sqlite3.connect(":memory:")) as database:
+        database.row_factory = sqlite3.Row
+        database.execute("CREATE TABLE qa_loan_acc_detail (etl_dt TEXT, current_balnc_cny REAL)")
+        database.executemany(
+            "INSERT INTO qa_loan_acc_detail VALUES (?, ?)",
+            [("2026-04-30", 100), ("2026-05-31", 130)],
+        )
+        rows = database.execute(sql).fetchall()
+        assert len(rows) == 1
+        assert dict(rows[0]) == expected
 
 
 async def test_prompt_drift_visible():

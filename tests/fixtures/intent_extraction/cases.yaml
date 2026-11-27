@@ -37,7 +37,7 @@ cases:
     why_hard: 两个快照而非跨月求和
     expected:
       metric: 贷款余额
-      time: {grain: month_end, points: ['2026-04-30', '2026-05-31']}
+      time: {grain: month_end, points: ['2026-05-31', '2026-04-30']}
       comparison: delta
     compile: true
   - id: EX-005
