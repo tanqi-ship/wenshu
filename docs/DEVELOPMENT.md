@@ -209,6 +209,9 @@ uv run python -m scripts.evaluate
 
 不要在 README、CONTEXT、ROADMAP 中重复维护同一份状态。README 只保留稳定概述和入口。
 
+文档更新发生在任务边界：开始前确认要改哪些文档，结束时同步，不要求每次编辑都全量重写。
+用增量修改；`CONTEXT.md` 保持在一页左右，里程碑历史和落地细节写入 `ROADMAP.md`。
+
 ## 8. AI 协作规则
 
 - AI 产出的代码必须有人类 owner。

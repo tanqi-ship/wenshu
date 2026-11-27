@@ -2,17 +2,21 @@
 
 本文件是 AI 编码代理和新会话进入仓库的统一入口。目标是让任何模型在不依赖聊天记录的情况下，快速恢复正确上下文并按同一边界工作。
 
-> 最后更新：2026-11-26
+> 最后更新：2026-11-27
 
 ## 1. 读取顺序
 
-新会话必须按顺序读取：
+新会话必读：
 
-1. `docs/CONTEXT.md`：当前状态、已完成、下一步、已知问题。
-2. `docs/DEVELOPMENT.md`：双机开发流程、分支、测试、Definition of Done。
-3. `docs/EVALUATION.md`：评测口径、黄金集纪律、真实模型验收边界。
-4. 当前任务对应的 `docs/superpowers/specs/` 或 `docs/superpowers/plans/`。
-5. `git status` 和最近提交。
+1. `AGENTS.md`（本文件）：硬边界与会话协议。
+2. `docs/CONTEXT.md`：当前状态、能做什么、下一步、已知坑。
+3. `git status` 和最近提交。
+
+按任务需要再读：
+
+- 改开发流程、分支、PR、提交 → `docs/DEVELOPMENT.md`
+- 改评测、黄金集、报告、真实模型验收 → `docs/EVALUATION.md`
+- 功能任务 → 当前任务对应的 `docs/superpowers/specs/` 或 `docs/superpowers/plans/`
 
 不要依赖聊天记录、模型记忆或 README 中的测试数量推断当前状态。当前状态只以 `docs/CONTEXT.md` 为准。
 
