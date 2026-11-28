@@ -24,6 +24,8 @@ from app.engine.validation.catalog import Catalog
 
 #: 数值容差。与 Spec 一致：1e-6 以内算相等。
 TOLERANCE = 1e-6
+#: unresolved 片段允许的边界词余量（字符数），见 ``_fragments_match``。
+FRAGMENT_SLACK = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +147,33 @@ def _strip_raw(intent: Intent) -> Intent:
     return replace(intent, time_range=time_range, filters=filters, raw={})
 
 
+def _fragments_match(expected: Sequence[str], actual: Sequence[str]) -> bool:
+    """unresolved 片段判定：允许边界词差异，不允许整句塞入。
+
+    每个预期片段必须唯一对应一个模型片段：要么完全相等，要么模型片段只是
+    多包了至多 ``FRAGMENT_SLACK`` 个字的边界词（如"按管户口径" 对 "管户口径"）。
+    片段数量必须一致，多出来的片段不能抵消；把整句问题塞进 unresolved 不能通过。
+    """
+    if not expected:
+        return not actual
+    if len(actual) != len(expected):
+        return False
+    remaining = list(actual)
+    for want in expected:
+        hit = next(
+            (
+                index
+                for index, got in enumerate(remaining)
+                if got == want or (want in got and len(got) <= len(want) + FRAGMENT_SLACK)
+            ),
+            None,
+        )
+        if hit is None:
+            return False
+        remaining.pop(hit)
+    return True
+
+
 def judge_extraction(
     case: Mapping[str, Any],
     *,
@@ -156,7 +185,9 @@ def judge_extraction(
     """判定一条抽取样本；规则与离线评测原有逻辑一致。"""
     expected_error = case.get("expected_error")
     if error is not None:
-        if expected_error == error.code and tuple(case.get("expected_fragments", ())) == error.fragments:
+        if expected_error == error.code and _fragments_match(
+            tuple(case.get("expected_fragments", ())), error.fragments
+        ):
             return _ok(expected=expected_error)
         return _fail("understanding", error.code, "抽取错误与手写预期不一致。")
     if intent is None:

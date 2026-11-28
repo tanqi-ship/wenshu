@@ -115,6 +115,27 @@ def test_extraction_wrong_error_code_fails() -> None:
     assert verdict.code == "EXTRACTION_MULTI_METRIC_UNSUPPORTED"
 
 
+def test_extraction_fragment_tolerates_boundary_word() -> None:
+    case = {"expected_error": "EXTRACTION_UNRESOLVED", "expected_fragments": ["管户口径"]}
+    error = ExtractionError("EXTRACTION_UNRESOLVED", "非默认口径", fragments=("按管户口径",))
+    assert judge_extraction(case, error=error).ok
+
+
+def test_extraction_fragment_rejects_whole_question() -> None:
+    case = {"expected_error": "EXTRACTION_UNRESOLVED", "expected_fragments": ["管户口径"]}
+    whole = "按管户口径查询2026年4月末各机构贷款余额"
+    error = ExtractionError("EXTRACTION_UNRESOLVED", "整句塞入", fragments=(whole,))
+    verdict = judge_extraction(case, error=error)
+    assert not verdict.ok
+    assert verdict.code == "EXTRACTION_UNRESOLVED"
+
+
+def test_extraction_fragment_count_must_match() -> None:
+    case = {"expected_error": "EXTRACTION_UNRESOLVED", "expected_fragments": ["管户口径"]}
+    error = ExtractionError("EXTRACTION_UNRESOLVED", "多出片段", fragments=("按管户口径", "各机构"))
+    assert not judge_extraction(case, error=error).ok
+
+
 def test_extraction_expected_compile_error_passes() -> None:
     case = {
         "expected": {
