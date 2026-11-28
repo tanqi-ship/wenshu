@@ -68,10 +68,10 @@ def _load_yaml(path: Path) -> object:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def _load_extraction_cases() -> list[dict[str, Any]]:
-    payload = _load_yaml(EXTRACTION_CASES)
+def _load_extraction_cases(path: Path = EXTRACTION_CASES) -> list[dict[str, Any]]:
+    payload = _load_yaml(path)
     if not isinstance(payload, dict) or not isinstance(payload.get("cases"), list):
-        raise ValueError(f"{EXTRACTION_CASES} 结构不符合预期。")
+        raise ValueError(f"{path} 结构不符合预期。")
     return list(payload["cases"])
 
 
@@ -89,8 +89,10 @@ def _select(cases: Sequence[dict[str, Any]], case_ids: Sequence[str] | None) -> 
     return [case for case in cases if str(case["id"]) in selected]
 
 
-def _filtered_cases(case_ids: Sequence[str] | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    extraction = _load_extraction_cases()
+def _filtered_cases(
+    case_ids: Sequence[str] | None, extraction_cases_path: Path = EXTRACTION_CASES
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    extraction = _load_extraction_cases(extraction_cases_path)
     execution = _load_execution_cases()
     if case_ids:
         known = {str(case["id"]) for case in (*extraction, *execution)}
@@ -410,6 +412,7 @@ def _metadata(
     budget_exhausted: bool,
     abort_reason: str,
     status: str,
+    extraction_cases_path: Path = EXTRACTION_CASES,
 ) -> dict[str, Any]:
     return {
         "run_id": run_id,
@@ -428,7 +431,8 @@ def _metadata(
         "repeats": repeats,
         "max_calls": max_calls,
         "case_filter": list(case_ids) if case_ids else None,
-        "extraction_cases_sha256": _sha256(EXTRACTION_CASES),
+        "extraction_cases_sha256": _sha256(extraction_cases_path),
+        "extraction_cases_path": str(extraction_cases_path),
         "execution_cases_sha256": _sha256(EXECUTION_CASES),
         "total_calls": len(calls),
         "total_tokens": sum(record.total_tokens for record in calls),
@@ -474,6 +478,7 @@ def _build_report(
     aborted: bool,
     budget_exhausted: bool,
     abort_reason: str,
+    extraction_cases_path: Path = EXTRACTION_CASES,
 ) -> dict[str, Any]:
     suites = [
         summarize_suite("extraction", extraction_attempts, repeats),
@@ -506,6 +511,7 @@ def _build_report(
             budget_exhausted=budget_exhausted,
             abort_reason=abort_reason,
             status=status,
+            extraction_cases_path=extraction_cases_path,
         ),
         "suites": suites,
         "status": status,
@@ -704,6 +710,7 @@ async def run(
     client_factory: ClientFactory = build_llm,
     output_root: Path = REAL_DIR,
     run_id: str | None = None,
+    extraction_cases_path: Path = EXTRACTION_CASES,
 ) -> int:
     if type(repeats) is not int or repeats <= 0:
         _warn("--repeats 必须是正整数。")
@@ -715,7 +722,7 @@ async def run(
         return 2
 
     try:
-        extraction_cases, execution_cases = _filtered_cases(case_ids)
+        extraction_cases, execution_cases = _filtered_cases(case_ids, extraction_cases_path)
     except ValueError as exc:
         _warn(str(exc))
         return 2
@@ -783,6 +790,7 @@ async def run(
             aborted=aborted,
             budget_exhausted=budget_exhausted,
             abort_reason=abort_reason,
+            extraction_cases_path=extraction_cases_path,
         )
         _write_outputs(
             output_dir,
@@ -809,6 +817,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--case", action="append", dest="cases", metavar="CASE_ID")
     parser.add_argument("--max-calls", type=int, default=200)
+    parser.add_argument(
+        "--extraction-cases",
+        type=Path,
+        default=EXTRACTION_CASES,
+        metavar="PATH",
+        help="抽取题集 YAML（默认回归题集；盲测集用 eval/blind/blind_extraction_v1.yaml）",
+    )
     args = parser.parse_args(argv)
     if args.repeats <= 0 or args.max_calls <= 0:
         parser.error("--repeats 和 --max-calls 必须是正整数。")
@@ -818,6 +833,7 @@ def main(argv: list[str] | None = None) -> int:
             repeats=args.repeats,
             case_ids=args.cases,
             max_calls=args.max_calls,
+            extraction_cases_path=args.extraction_cases,
         )
     )
 

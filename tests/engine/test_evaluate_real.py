@@ -96,6 +96,35 @@ def _factory(inner: _QuestionLLM):
     return lambda settings: inner
 
 
+async def test_extraction_cases_path_is_recorded_and_used(tmp_path: Path) -> None:
+    cases_file = tmp_path / "blind.yaml"
+    cases_file.write_text(
+        "cases:\n"
+        "  - id: BL-X\n"
+        "    question: 截止2026年4月末，贷款余额\n"
+        "    expected: {metric: 贷款余额, time: {grain: month_end, points: ['2026-04-30']}}\n"
+        "    compile: true\n",
+        encoding="utf-8",
+    )
+    llm = _QuestionLLM({"截止2026年4月末，贷款余额": _cassette_text(EX_001_CASSETTE)})
+    code = await run(
+        _settings(),
+        repeats=1,
+        case_ids=["BL-X"],
+        output_root=tmp_path,
+        run_id="blind",
+        client_factory=_factory(llm),
+        extraction_cases_path=cases_file,
+    )
+    assert code == 0
+    report = json.loads((tmp_path / "blind" / "report.json").read_text(encoding="utf-8"))
+    assert report["metadata"]["extraction_cases_path"] == str(cases_file)
+    assert (
+        report["metadata"]["extraction_cases_sha256"] == hashlib.sha256(cases_file.read_bytes()).hexdigest()
+    )
+    assert report["suites"][0]["attempts_detail"][0]["case_id"] == "BL-X"
+
+
 async def test_preflight_rejects_replay_without_calling_factory(tmp_path: Path) -> None:
     spy = _SpyFactory()
     code = await run(

@@ -1,0 +1,283 @@
+# 盲测集 v1（2026-11-28）：38 条从未参与过提示词迭代的抽取题。
+#
+# 规则：
+#   - 题面在运行前写死，运行后不改题、不改预期、不调提示词；结果只记录。
+#   - 预期按业务含义写，不按当前提示词能否做到写。策略类条目（无年份、相对时间、
+#     不带“末”的月份、多指标）沿用现行契约，是口径，不算模型失败。
+#   - compile: true 的题，预期 Intent 已在运行前用编译器 + L4 离线核对过。
+#   - 与回归题集结构相同（无 cassette），供 `evaluate_real --extraction-cases` 使用；
+#     不进 tests/fixtures，不进 CI。
+
+cases:
+  # ---- 月末单时点：截止/口语/同义词/噪声后缀 ----
+  - id: BL-001
+    question: 截止2026年4月末，贷款余额
+    why_hard: “截止”而非“截至”
+    expected: {metric: 贷款余额, time: {grain: month_end, points: ['2026-04-30']}}
+    compile: true
+  - id: BL-002
+    question: 2026年4月末的时候，全行的贷款余额是多少
+    why_hard: 口语“的时候”
+    expected: {metric: 贷款余额, time: {grain: month_end, points: ['2026-04-30']}}
+    compile: true
+  - id: BL-003
+    question: 截至2026年4月末，全行不良贷款率是多少？请给准确数字
+    why_hard: 噪声后缀
+    expected: {metric: 不良贷款率, time: {grain: month_end, points: ['2026-04-30']}}
+    compile: true
+  - id: BL-004
+    question: 帮我查下2026年4月末各项贷款余额
+    why_hard: 目录同义词“各项贷款余额”应落到登记名
+    expected: {metric: 贷款余额, time: {grain: month_end, points: ['2026-04-30']}}
+    compile: true
+  - id: BL-005
+    question: 请查询2026年4月30日的贷款余额
+    why_hard: 具体日期应为 day；只判 Intent，编译器对 day 的支持未验
+    expected: {metric: 贷款余额, time: {grain: day, points: ['2026-04-30']}}
+
+  # ---- 机构过滤：登记全名 / 语序颠倒 / 多机构 in / 维表维度 ----
+  - id: BL-006
+    question: 2026年4月末渝北支行贷款余额多少
+    why_hard: 登记全名而非简称
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 机构, value: 渝北支行}]
+    compile: true
+  - id: BL-007
+    question: 帮我查下渝北2026年4月末不良贷款余额
+    why_hard: 机构在时间之前
+    expected:
+      metric: 不良贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 机构, value: 渝北}]
+    compile: true
+  - id: BL-008
+    question: 2026年4月末渝北和江北两个支行的不良贷款余额合计
+    why_hard: 多机构应为 in，不是 eq
+    expected:
+      metric: 不良贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 机构, operator: in, value: [渝北, 江北]}]
+    compile: true
+  - id: BL-009
+    question: 2026年4月末上级行是渝北支行的机构贷款余额
+    why_hard: 过滤落在维表维度“上级机构”
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 上级机构, value: 渝北支行}]
+    compile: true
+
+  # ---- 多维分组：口语动词 ----
+  - id: BL-010
+    question: 2026年4月末按机构和产品统计不良贷款率
+    why_hard: “统计”动词、比率指标分组
+    expected:
+      metric: 不良贷款率
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [机构, 产品]
+    compile: true
+  - id: BL-011
+    question: 2026年4月末分产品看看贷款余额
+    why_hard: 口语“分…看看”
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [产品]
+    compile: true
+
+  # ---- delta：口语 / 提及顺序 / 从A到B ----
+  - id: BL-012
+    question: 2026年4月末贷款余额比3月末多了多少
+    why_hard: 口语“多了多少”；基准“3月末”无年份，按现行契约进 unresolved
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: ['3月末']
+  - id: BL-013
+    question: 2026年4月末和2026年3月末贷款余额的差额
+    why_hard: “差额”是派生说法；按提及顺序定当前/基准
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30', '2026-03-31']}
+      comparison: delta
+    compile: true
+  - id: BL-014
+    question: 贷款余额从2026年1月末到2026年4月末增长了多少
+    why_hard: “增长了多少”，指标在时间之前
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30', '2026-01-31']}
+      comparison: delta
+    compile: true
+
+  # ---- 全局 Top N：序词 / 语序颠倒 ----
+  - id: BL-015
+    question: 2026年4月末贷款余额最高的3个机构是哪几个
+    why_hard: “最高的N个”即 Top N；编译器暂不支持单时点全局 Top N，只判 Intent
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [机构]
+      top_n: 3
+  - id: BL-016
+    question: 不良贷款余额前五的产品，2026年4月末的
+    why_hard: 中文数字“前五”、时间后置；编译器暂不支持单时点全局 Top N，只判 Intent
+    expected:
+      metric: 不良贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [产品]
+      top_n: 5
+
+  # ---- 区间 ----
+  - id: BL-017
+    question: 2026年4月1日至2026年4月15日的不良贷款率
+    why_hard: “至”而非“到”，月中区间
+    expected:
+      metric: 不良贷款率
+      time: {grain: range, start: '2026-04-01', end: '2026-04-15'}
+    compile: true
+  - id: BL-018
+    question: 2026年1月到3月每天的贷款余额
+    why_hard: “每天”修饰的区间仍是 range
+    expected:
+      metric: 贷款余额
+      time: {grain: range, start: '2026-01-01', end: '2026-03-31'}
+    compile: true
+
+  # ---- 整体占比 ----
+  - id: BL-019
+    question: 2026年4月末各机构贷款余额占全行的比重
+    why_hard: “比重”即 share
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [机构]
+      share: {dimension: 机构}
+    compile: true
+  - id: BL-020
+    question: 2026年4月末各产品不良贷款余额占比
+    why_hard: “占比”省略“整体”
+    expected:
+      metric: 不良贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [产品]
+      share: {dimension: 产品}
+    compile: true
+
+  # ---- 报表 ----
+  - id: BL-021
+    question: 从报表取2026年5月各产品的不良贷款率
+    why_hard: 报表请求 + 不带“末”的月份 → month
+    expected:
+      metric: 不良贷款率
+      time: {grain: month, points: ['2026-05-31']}
+      dimensions: [产品]
+      source_mode: report
+    compile: true
+  - id: BL-022
+    question: 2026年4月的不良贷款率，用报表数据
+    why_hard: 报表请求在句尾；报表需固定粒度“产品”，不带维度的报表请求编译器不支持，只判 Intent
+    expected:
+      metric: 不良贷款率
+      time: {grain: month, points: ['2026-04-30']}
+      source_mode: report
+
+  # ---- 别名 / 口语指标 ----
+  - id: BL-023
+    question: 2026年4月末渝北的不良率
+    why_hard: “不良率”未登记为同义词，业务含义是不良贷款率
+    expected:
+      metric: 不良贷款率
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 机构, value: 渝北}]
+    compile: true
+  - id: BL-024
+    question: 2026年4月末渝北不良贷款多少
+    why_hard: 省略“余额”，目录同义词“不良贷款”
+    expected:
+      metric: 不良贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      filters: [{dimension: 机构, value: 渝北}]
+    compile: true
+
+  # ---- 否定式噪声 / 填充词 ----
+  - id: BL-025
+    question: 2026年4月末全行不良贷款率，注意是不良贷款率不是不良余额
+    why_hard: 否定句里出现的指标名不能进 metrics
+    expected: {metric: 不良贷款率, time: {grain: month_end, points: ['2026-04-30']}}
+    compile: true
+  - id: BL-026
+    question: 大概看一下2026年4月末的贷款余额就行
+    why_hard: 前后填充词
+    expected: {metric: 贷款余额, time: {grain: month_end, points: ['2026-04-30']}}
+    compile: true
+
+  # ---- 应拒答：未知指标 / 未知维度 ----
+  - id: BL-027
+    question: 2026年4月末的存款余额是多少
+    why_hard: 未登记指标照原文保留
+    expected: {metric: 存款余额, time: {grain: month_end, points: ['2026-04-30']}}
+    compile_error: UNKNOWN_METRIC
+  - id: BL-028
+    question: 2026年4月末按行业分类的贷款余额
+    why_hard: 未登记维度照原文保留
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [行业]
+    compile_error: UNKNOWN_DIMENSION
+  - id: BL-029
+    question: 2026年4月末贷款余额是多少，按客户经理分
+    why_hard: 未知维度出现在句尾的“按…分”
+    expected:
+      metric: 贷款余额
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [客户经理]
+    compile_error: UNKNOWN_DIMENSION
+  - id: BL-030
+    question: 2026年4月末各机构的贷款
+    why_hard: “贷款”不是登记指标名，不得猜成贷款余额
+    expected:
+      metric: 贷款
+      time: {grain: month_end, points: ['2026-04-30']}
+      dimensions: [机构]
+    compile_error: UNKNOWN_METRIC
+
+  # ---- 应澄清：相对时间 / 无年份 / 多指标（现行契约） ----
+  - id: BL-031
+    question: 去年同期贷款余额
+    why_hard: 相对时间
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: ['去年同期']
+  - id: BL-032
+    question: 上个月末贷款余额
+    why_hard: 相对时间
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: ['上个月末']
+  - id: BL-033
+    question: 今年4月末贷款余额
+    why_hard: 相对年份
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: ['今年4月末']
+  - id: BL-034
+    question: 4月30日贷款余额
+    why_hard: 无年份日期
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: ['4月30日']
+  - id: BL-035
+    question: 2026年4月末贷款余额和不良贷款率
+    why_hard: 多指标
+    expected_error: EXTRACTION_MULTI_METRIC_UNSUPPORTED
+  - id: BL-036
+    question: 2026年4月末各机构的不良贷款余额和贷款余额分别是多少
+    why_hard: 多指标 + 分组 + “分别”
+    expected_error: EXTRACTION_MULTI_METRIC_UNSUPPORTED
+  - id: BL-037
+    question: 2026年上半年不良贷款率
+    why_hard: 含糊时点
+    expected_error: EXTRACTION_UNRESOLVED
+    expected_fragments: ['2026年上半年']
+  - id: BL-038
+    question: 贷款余额是多少
+    why_hard: 缺时间不补
+    expected: {metric: 贷款余额}
