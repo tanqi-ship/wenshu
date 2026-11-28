@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "d831ea7e22d916db": {
+    "aed18906f4c65ae5": {
       "text": "{\"metrics\":[\"贷款余额\"],\"filters\":[{\"dimension\":\"机构\",\"value\":\"渝北\"}],\"unresolved\":[]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,

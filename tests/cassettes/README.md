@@ -6,7 +6,7 @@
 - 独立手写问题/预期/难点/来源：`tests/fixtures/intent_extraction/cases.yaml`。
 - `clarification_session/`：14份新手写响应（首轮/单槽补答/完整重述），独立会话预期见
   `tests/fixtures/clarification_session/cases.yaml`，覆盖10组会话；其中部分首轮直接引用原EX文件，不复制或刷新。
-- slot-reply-v1与intent-extraction-v2消息协议分开；固定键不含owner/UUID/数据库路径，不依赖随机ID。
+- slot-reply-v1与intent-extraction-v7消息协议分开；固定键不含owner/UUID/数据库路径，不依赖随机ID。
 - `query_execution/AQ-001.json`：M3.4 手写假响应，固定键对应 `eval/cases/asset_quality.yaml` 中的原题；与本地业务 SQLite 一起验收结果，不替换 EX-001。
 - provenance=handwritten_fixture，model=synthetic/handwritten-fixture，token 数为 0。
 - 真实手动录制写入 `<WENSHU_LLM_CASSETTE_DIR>/recorded/intent_extraction/<case>.json`，

@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "0df88c8d46ef630d": {
+    "50fbe31fb2b40605": {
       "text": "{\"metrics\":[\"贷款余额\"],\"unresolved\":[\"2026年4月\"]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,

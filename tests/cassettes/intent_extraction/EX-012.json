@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "db3624b2c3eacfe9": {
+    "abc5c8b1d39aeb7a": {
       "text": "{\"metrics\":[\"贷款余额\"],\"unresolved\":[\"4月末\"]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,

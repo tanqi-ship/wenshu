@@ -2,7 +2,7 @@
   "version": 1,
   "model": "synthetic/handwritten-fixture",
   "entries": {
-    "d7b7b0ca4fdab601": {
+    "890cfb996d20aef9": {
       "text": "{\"metrics\":[\"贷款余额\"],\"unresolved\":[]}",
       "model": "synthetic/handwritten-fixture",
       "prompt_tokens": 0,
