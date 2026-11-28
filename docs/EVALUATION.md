@@ -143,6 +143,15 @@ uv run python -m scripts.evaluate_real                            # 全量
 - 当前真实运行状态只见 `docs/CONTEXT.md`；修正离线预期不代表已运行 round 2 或真实模型准确率提升。
 - unresolved 片段判定（2026-11-28 起）：错误码一致且片段逐一对应；模型片段允许比预期多出至多 4 个字的边界词（如“按管户口径”对“管户口径”），片段数量必须一致，整句塞入不得通过。旧轮次按当时的精确比对口径记录，不追溯重算。
 
+### 6.2 盲测集
+
+- 盲测集是**未参与提示词迭代**的抽取题，放 `eval/blind/blind_extraction_v1.yaml`，结构与回归抽取题相同（无 cassette）。不进 `tests/fixtures`、不进 CI、不配 cassette。
+- 运行前写死；运行后不改题、不改预期、不因结果调提示词。结果无论多少都写进 `docs/CONTEXT.md`。
+- 预期按业务含义写；策略类条目沿用现行契约并在 `why_hard` 注明，便于把“契约 vs 常识”的失败和真缺口分开。
+- 运行：`uv run python -m scripts.evaluate_real --extraction-cases eval/blind/blind_extraction_v1.yaml --case BL-001 ...`；报告 metadata 记录 `extraction_cases_path` 与 sha256。
+- 盲测集一旦被用来改提示词，就不再是盲测；下一轮要换新题。
+- 当前结果：v1 / 38 题 / 提示词 v7：全对 89.5%，零不稳定（run `20261128T061407Z-e3e8468`）。
+
 ## 7. 失败归因
 
 每条失败至少记录：
